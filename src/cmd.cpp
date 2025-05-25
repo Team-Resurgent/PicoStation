@@ -12,9 +12,11 @@
 #include "picostation.h"
 #include "pseudo_atomics.h"
 #include "values.h"
+#include "directory_listing.h"
+#include "debug.h"
 
 #if DEBUG_CMD
-#define DEBUG_PRINT(...) printf(__VA_ARGS__)
+#define DEBUG_PRINT(...) picostation::debug::print(__VA_ARGS__)
 #else
 #define DEBUG_PRINT(...) while (0)
 #endif
@@ -132,10 +134,21 @@ inline void picostation::MechCommand::customCommand(const uint32_t latched) {
             g_fileListingState = FileListingStates::IDLE;
             break;
         case 0x1:
+            picostation::debug::print("GETDIRECTORY\n");
+            picostation::DirectoryListing::gotoRoot();
+            picostation::DirectoryListing::getDirectoryEntries(0);
+            g_fileListingState = FileListingStates::GETDIRECTORY;
+            
+            break;
+        case 0x2: //navigate
+            picostation::debug::print("navigate folder\n");
+            picostation::DirectoryListing::gotoDirectory(arg);
+            picostation::debug::print("navigate folder getDirectoryEntries\n");
+            picostation::DirectoryListing::getDirectoryEntries(0);
             g_fileListingState = FileListingStates::GETDIRECTORY;
             break;
-        case 0x2:
-        printf("disc image change: %x %x\n", subCommand, arg);
+        case 0x3:
+            printf("disc image change: %x %x\n", subCommand, arg);
             g_imageIndex = arg;
             break;
         case 0xa:

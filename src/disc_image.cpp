@@ -15,9 +15,10 @@
 #include "third_party/iec-60908b/edcecc.h"
 #include "third_party/posix_file.h"
 #include "values.h"
+#include "debug.h"
 
 #if DEBUG_CUE
-#define DEBUG_PRINT(...) printf(__VA_ARGS__)
+#define DEBUG_PRINT(...) picostation::debug::print(__VA_ARGS__)
 #else
 #define DEBUG_PRINT(...) while (0)
 #endif

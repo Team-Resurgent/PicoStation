@@ -16,9 +16,10 @@
 #include "subq.h"
 #include "values.h"
 #include "f_util.h"
+#include "debug.h"
 
 #if DEBUG_MAIN
-#define DEBUG_PRINT(...) printf(__VA_ARGS__)
+#define DEBUG_PRINT(...) picostation::debug::print(__VA_ARGS__)
 #else
 #define DEBUG_PRINT(...) while (0)
 #endif

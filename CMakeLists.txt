@@ -12,10 +12,10 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico CACHE STRING "Board type")
+set(PICO_BOARD pico2 CACHE STRING "Board type")
 
 # Example override variant
-# set(PICOSTATION_VARIANT "picostation_plus_pico2")
+set(PICOSTATION_VARIANT "picostation_plus_pico2")
 
 if(NOT DEFINED PICOSTATION_VARIANT)
     if(PICO_BOARD EQUAL pico2)
@@ -38,6 +38,8 @@ include(pico_sdk_import.cmake)
 project(${PROJECT_NAME})
 
 pico_sdk_init()
+
+set(CMAKE_BUILD_TYPE Debug)
 
 function(addBinaryFileWithSize target name sizeName path)
     set(asmFile "${PROJECT_BINARY_DIR}/includes/${target}_${name}.s")
@@ -103,6 +105,7 @@ target_sources(
     src/picostation.cpp
     src/subq.cpp
     src/utils.cpp
+    src/debug.cpp
     src/directory_listing.cpp
     third_party/cueparser/cueparser.c
     third_party/cueparser/fileabstract.c

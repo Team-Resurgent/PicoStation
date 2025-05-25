@@ -21,9 +21,9 @@ enum : unsigned int {
 
 enum class FileListingStates {
     IDLE,
-    GETTINGDIRFILECOUNT,
     DIRREADY,
     GETDIRECTORY,
+    GETDIRECTORYNEXT,
 };
 
 extern pseudoatomic<FileListingStates> g_fileListingState;

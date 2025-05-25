@@ -1,23 +1,25 @@
 #pragma once
 
 #include <string.h>
+#include <cstdio>
 
 #define LISTING_SIZE 2324 
 
 class listingBuilder {
   public:
     listingBuilder() {
-        mSize = 0;
+        clear();
     }
 
-    bool addString(const char* value) {
+    bool addString(const char* value, uint8_t flags) {
         uint8_t pathLen = strnlen(value, 255);
-        uint16_t sizeToAdd = 1 + pathLen;
+        uint16_t sizeToAdd = 2 + pathLen;
         if ((mSize + sizeToAdd + 2) > LISTING_SIZE) {
             return false;
         }
-        memcpy(mValuesContainer + mSize, &pathLen, 1);
-        memcpy(mValuesContainer + mSize + 1, value, pathLen);
+        mValuesContainer[mSize] = pathLen;
+        mValuesContainer[mSize + 1] = flags;
+        memcpy(mValuesContainer + mSize + 2, value, pathLen);
         mSize += sizeToAdd;
         return true;
     }
@@ -46,8 +48,8 @@ class listingBuilder {
         {
             if (currentPos == index)
             {
-                uint16_t length =mValuesContainer[offset + 1];
-                strncpy(result, (char*)&mValuesContainer[offset], length);
+                uint16_t length = mValuesContainer[offset];
+                strncpy(result, (char*)&mValuesContainer[offset + 2], length);
                 result[length] = '\0';
                 return result;
             }
@@ -56,7 +58,7 @@ class listingBuilder {
             {
                 break;
             }
-            offset += strLen + 1;
+            offset += strLen + 2;
             currentPos++;
         }
         return nullptr;
@@ -64,6 +66,7 @@ class listingBuilder {
 
     void clear() {
         mSize = 0;
+        memset(mValuesContainer, 0, LISTING_SIZE);
     }
 
   private:
