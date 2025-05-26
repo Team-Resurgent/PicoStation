@@ -37,15 +37,25 @@ void DirectoryListing::gotoRoot() {
 }
 
 bool DirectoryListing::gotoDirectory(const uint32_t index) { 
-    picostation::debug::print("gotoDirectory: enter\n");
-    bool result = getDirectoryEntry(index, currentDirectory); 
+    char newFolder[c_maxFilePathLength + 1];
+    bool result = getDirectoryEntry(index, newFolder); 
+    if (result)
+    {
+        if (strncmp(currentDirectory, "/", c_maxFilePathLength) != 0)
+        {
+            strncat(currentDirectory, "/", c_maxFilePathLength);
+        }
+        strncat(currentDirectory, newFolder, c_maxFilePathLength);
+    }
     picostation::debug::print("gotoDirectory: %s\n", currentDirectory);
     return result;
 }
 
 void DirectoryListing::gotoParentDirectory() {
+    picostation::debug::print("gotoParentDirectory: %s\n", currentDirectory);
     uint32_t length = strnlen(currentDirectory, c_maxFilePathLength);
     if (length <= 1) {
+        picostation::debug::print("length: %i\n", length);
         return;
     }
 
@@ -108,52 +118,37 @@ bool DirectoryListing::pathContainsFilter(const char* filePath) {
 }
 
 bool DirectoryListing::getDirectoryEntry(const uint32_t index, char* filePath) {
-
-    picostation::debug::print("getDirectoryEntry 1 %s\n", currentDirectory);
-
     DIR dir;
     FILINFO currentEntry;
     FILINFO nextEntry;
     FRESULT res = f_opendir(&dir, currentDirectory);
     if (res != FR_OK) {
-       // picostation::debug::print("f_opendir error: %s (%d)\n", FRESULT_str(res), res);
-        picostation::debug::print("getDirectoryEntry: failed\n");
+        picostation::debug::print("f_opendir error: %s (%d)\n", FRESULT_str(res), res);
         return false;
     }
-
-    picostation::debug::print("getDirectoryEntry 2\n");
 
     uint32_t filesProcessed = 0;
 
     res = f_readdir(&dir, &currentEntry);
-    picostation::debug::print("getDirectoryEntry 3\n");
     if (res == FR_OK && currentEntry.fname[0] != '\0') {
         res = f_readdir(&dir, &nextEntry);
         bool hasNext = (res == FR_OK && nextEntry.fname[0] != '\0');
         while (true) {
-            picostation::debug::print("getDirectoryEntry loop %i\n", filesProcessed);
             if (!(currentEntry.fattrib & AM_HID)) {
-                picostation::debug::print("getDirectoryEntry bot hid\n");
                 if (pathContainsFilter(currentEntry.fname)) {
-                    picostation::debug::print("getDirectoryEntry bot filtered\n");
                     if (filesProcessed == index) {
-                        picostation::debug::print("getDirectoryEntry found\n");
                         uint8_t length = strnlen(currentEntry.fname, 255);
                         strncpy(filePath, currentEntry.fname, length);
                         filePath[length] = '\0';
-                        picostation::debug::print("Getting directory entry %s\n", filePath);
                         f_closedir(&dir);
                         return true;
                     }
-                    picostation::debug::print("getDirectoryEntry not found\n");
                     filesProcessed++;
                 }
             }
             if (!hasNext) {
-                picostation::debug::print("getDirectoryEntry no next\n");
                 break;
             }
-            picostation::debug::print("getDirectoryEntry continue\n");
             currentEntry = nextEntry;
             res = f_readdir(&dir, &nextEntry);
             hasNext = (res == FR_OK && nextEntry.fname[0] != '\0');
@@ -161,7 +156,6 @@ bool DirectoryListing::getDirectoryEntry(const uint32_t index, char* filePath) {
     }
 
     f_closedir(&dir);
-    picostation::debug::print("getDirectoryEntry: not found\n");
     return false;
 }
 
@@ -171,8 +165,7 @@ bool DirectoryListing::getDirectoryEntries(const uint32_t offset) {
     FILINFO nextEntry;
     FRESULT res = f_opendir(&dir, currentDirectory);
     if (res != FR_OK) {
-        //picostation::debug::print("f_opendir error: %s (%d)\n", FRESULT_str(res), res);
-        picostation::debug::print("getDirectoryEntries: failed\n");
+        picostation::debug::print("f_opendir error: %s (%d)\n", FRESULT_str(res), res);
         return false;
     }
 

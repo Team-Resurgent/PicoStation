@@ -128,28 +128,33 @@ inline void picostation::MechCommand::autoSequence(const uint32_t latched)  // $
 inline void picostation::MechCommand::customCommand(const uint32_t latched) {
     const uint32_t subCommand = (latched & 0x0F0000) >> 16;
     const uint32_t arg = (latched & 0xFFFF);
+    g_fileArg = arg;
     printf("Custom command: %x %x\n", subCommand, arg);
     switch (subCommand) {
         case 0x0:
             g_fileListingState = FileListingStates::IDLE;
             break;
         case 0x1:
-            picostation::debug::print("GETDIRECTORY\n");
-            picostation::DirectoryListing::gotoRoot();
-            picostation::DirectoryListing::getDirectoryEntries(0);
-            g_fileListingState = FileListingStates::GETDIRECTORY;
-            
+            picostation::debug::print("GOTO_ROOT\n");
+            g_fileListingState = FileListingStates::GOTO_ROOT;
             break;
-        case 0x2: //navigate
-            picostation::debug::print("navigate folder\n");
-            picostation::DirectoryListing::gotoDirectory(arg);
-            picostation::debug::print("navigate folder getDirectoryEntries\n");
-            picostation::DirectoryListing::getDirectoryEntries(0);
-            g_fileListingState = FileListingStates::GETDIRECTORY;
+        case 0x2: 
+            picostation::debug::print("GOTO_PARENT\n");
+            g_fileListingState = FileListingStates::GOTO_PARENT;
             break;
-        case 0x3:
+        case 0x3: 
+            picostation::debug::print("GOTO_DIRECTORY\n");
+            g_fileListingState = FileListingStates::GOTO_DIRECTORY;
+            break;
+        case 0x4: 
+            picostation::debug::print("GET_NEXT_CONTENTS\n");
+            g_fileListingState = FileListingStates::GET_NEXT_CONTENTS;
+            break;
+        case 0x5:
+            picostation::debug::print("MOUNT_FILE\n");
             printf("disc image change: %x %x\n", subCommand, arg);
-            g_imageIndex = arg;
+            g_fileListingState = FileListingStates::MOUNT_FILE;
+            g_imageIndex = arg; //todo use g_fileArg instead
             break;
         case 0xa:
             if (arg == 0xBEEF) {

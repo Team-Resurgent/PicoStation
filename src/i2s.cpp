@@ -174,6 +174,28 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
             memset(pioSamples, 0, sizeof(pioSamples));
         }
 
+        if (g_fileListingState.Load() != FileListingStates::IDLE) {
+            if (g_fileListingState.Load() == FileListingStates::GOTO_ROOT) {
+                printf("Processing GOTO_ROOT\n");
+                picostation::DirectoryListing::gotoRoot();
+                picostation::DirectoryListing::getDirectoryEntries(0);
+            } else  if (g_fileListingState.Load() == FileListingStates::GOTO_PARENT) {
+                printf("Processing GOTO_PARENT\n");
+                picostation::DirectoryListing::gotoParentDirectory();
+                picostation::DirectoryListing::getDirectoryEntries(0);
+            } else  if (g_fileListingState.Load() == FileListingStates::GOTO_DIRECTORY) {
+                printf("Processing GOTO_DIRECTORY %i\n", g_fileArg.Load());
+                picostation::DirectoryListing::gotoDirectory(g_fileArg.Load());
+                picostation::DirectoryListing::getDirectoryEntries(0);
+            } else  if (g_fileListingState.Load() == FileListingStates::GET_NEXT_CONTENTS) {
+                printf("Processing GET_NEXT_CONTENTS\n");
+            } else  if (g_fileListingState.Load() == FileListingStates::MOUNT_FILE) {
+                printf("Processing MOUNT_FILE\n");
+                // move mounting here;
+            }
+            g_fileListingState = FileListingStates::IDLE;
+        }
+
         // Data sent via DMA, load the next sector
         if (bufferForDMA != bufferForSDRead) {
 #if DEBUG_I2S
@@ -182,12 +204,10 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
 
             int16_t* sectorData = nullptr;
 
-            if ((currentSector - c_leadIn - c_preGap == 100) && g_fileListingState.Load() == FileListingStates::GETDIRECTORY) {
-
-                g_fileListingState = FileListingStates::IDLE;
+            if ((currentSector - c_leadIn - c_preGap) == 100) {
 
                 g_discImage.buildSector(currentSector - c_leadIn, userData, picostation::DirectoryListing::getFileListingData(), 2324);
-                printf("Sector 100 load\n");
+                //printf("Sector 100 load\n");
 
                 sectorData = reinterpret_cast<int16_t *>(userData);
 
