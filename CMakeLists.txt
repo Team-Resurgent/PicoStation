@@ -12,7 +12,7 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico2 CACHE STRING "Board type")
+set(PICO_BOARD pico1 CACHE STRING "Board type")
 
 # Example override variant
 set(PICOSTATION_VARIANT "picostation_plus_pico2")
