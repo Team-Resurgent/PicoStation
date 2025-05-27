@@ -91,7 +91,7 @@ target_compile_definitions(
     MAXINDEX=2
 )
 
-addBinaryFileWithSize(${PROJECT_NAME} loaderImage loaderImageSize binary/picoloader.bin)
+addBinaryFileWithSize(${PROJECT_NAME} loaderImage loaderImageSize binary/picostation-menu.bin)
 
 target_sources(
     ${PROJECT_NAME} PRIVATE

@@ -47,6 +47,7 @@ unsigned int picostation::g_audioCtrlMode = audioControlModes::NORMAL;
 
 pseudoatomic<picostation::FileListingStates> picostation::g_fileListingState;
 pseudoatomic<uint32_t> picostation::g_fileArg;
+extern pseudoatomic<int> g_imageIndex;
 
 static unsigned int s_mechachonOffset;
 unsigned int picostation::g_soctOffset;
@@ -287,6 +288,7 @@ void picostation::updatePlaybackSpeed() {
 
 void picostation::reset() {
     DEBUG_PRINT("RESET!\n");
+    g_imageIndex = -1;
     pio_sm_set_enabled(PIOInstance::SUBQ, SM::SUBQ, false);
     pio_sm_set_enabled(PIOInstance::SOCT, SM::SOCT, false);
     pio_sm_restart(PIOInstance::MECHACON, SM::MECHACON);

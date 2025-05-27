@@ -32,8 +32,7 @@ void DirectoryListing::init() {
 }
 
 void DirectoryListing::gotoRoot() { 
-    currentDirectory[0] = '/';
-    currentDirectory[1] = '\0';
+    currentDirectory[0] = '\0';
 }
 
 bool DirectoryListing::gotoDirectory(const uint32_t index) { 
@@ -41,42 +40,40 @@ bool DirectoryListing::gotoDirectory(const uint32_t index) {
     bool result = getDirectoryEntry(index, newFolder); 
     if (result)
     {
-        if (strncmp(currentDirectory, "/", c_maxFilePathLength) != 0)
-        {
-            strncat(currentDirectory, "/", c_maxFilePathLength);
-        }
-        strncat(currentDirectory, newFolder, c_maxFilePathLength);
+        combinePaths(currentDirectory, newFolder, currentDirectory);
     }
     picostation::debug::print("gotoDirectory: %s\n", currentDirectory);
     return result;
 }
 
+bool DirectoryListing::getPath(const uint32_t index, char* filePath) { 
+    char newFolder[c_maxFilePathLength + 1];
+    bool result = getDirectoryEntry(index, newFolder); 
+    if (result)
+    {
+        combinePaths(currentDirectory, newFolder, filePath);
+    }
+    return result;
+}
+
 void DirectoryListing::gotoParentDirectory() {
-    picostation::debug::print("gotoParentDirectory: %s\n", currentDirectory);
     uint32_t length = strnlen(currentDirectory, c_maxFilePathLength);
-    if (length <= 1) {
-        picostation::debug::print("length: %i\n", length);
+    if (length == 0) {
         return;
     }
 
     uint32_t position = length - 1;
 
-    // Remove any trailing /
-    if (currentDirectory[position] == '/') {
-        currentDirectory[position] = '\0';
-        position--;
-    }
-
-    // Remove chars until hit /
     while (position > 0) {
         if (currentDirectory[position] == '/') {
-            break;
+            currentDirectory[position] = '\0';
+            return;
         }
         currentDirectory[position] = '\0';
         position--;
     }
 
-    picostation::debug::print("gotoParentDirectory: %s\n", currentDirectory);
+    currentDirectory[0] = '\0';
 }
 
 void DirectoryListing::setFilter(const char* filter) {
@@ -117,47 +114,6 @@ bool DirectoryListing::pathContainsFilter(const char* filePath) {
     return strstr(pathWithoutExtension, currentFilter) != nullptr;
 }
 
-bool DirectoryListing::getDirectoryEntry(const uint32_t index, char* filePath) {
-    DIR dir;
-    FILINFO currentEntry;
-    FILINFO nextEntry;
-    FRESULT res = f_opendir(&dir, currentDirectory);
-    if (res != FR_OK) {
-        picostation::debug::print("f_opendir error: %s (%d)\n", FRESULT_str(res), res);
-        return false;
-    }
-
-    uint32_t filesProcessed = 0;
-
-    res = f_readdir(&dir, &currentEntry);
-    if (res == FR_OK && currentEntry.fname[0] != '\0') {
-        res = f_readdir(&dir, &nextEntry);
-        bool hasNext = (res == FR_OK && nextEntry.fname[0] != '\0');
-        while (true) {
-            if (!(currentEntry.fattrib & AM_HID)) {
-                if (pathContainsFilter(currentEntry.fname)) {
-                    if (filesProcessed == index) {
-                        uint8_t length = strnlen(currentEntry.fname, 255);
-                        strncpy(filePath, currentEntry.fname, length);
-                        filePath[length] = '\0';
-                        f_closedir(&dir);
-                        return true;
-                    }
-                    filesProcessed++;
-                }
-            }
-            if (!hasNext) {
-                break;
-            }
-            currentEntry = nextEntry;
-            res = f_readdir(&dir, &nextEntry);
-            hasNext = (res == FR_OK && nextEntry.fname[0] != '\0');
-        }
-    }
-
-    f_closedir(&dir);
-    return false;
-}
 
 bool DirectoryListing::getDirectoryEntries(const uint32_t offset) {
     DIR dir;
@@ -209,5 +165,59 @@ bool DirectoryListing::getDirectoryEntries(const uint32_t offset) {
 uint8_t* DirectoryListing::getFileListingData() {
     return fileListing->getData();
 }
+
+// Private
+
+void DirectoryListing::combinePaths(const char* filePath1, const char* filePath2, char* newPath) { 
+    char result[c_maxFilePathLength + 1];
+    strncpy(result, filePath1, c_maxFilePathLength);
+    if (strnlen(result, c_maxFilePathLength) > 0)
+    {
+        strncat(result, "/", c_maxFilePathLength);
+    }
+    strncat(result, filePath2, c_maxFilePathLength);
+    strncpy(newPath, result, c_maxFilePathLength);
+}
+
+bool DirectoryListing::getDirectoryEntry(const uint32_t index, char* filePath) {
+    DIR dir;
+    FILINFO currentEntry;
+    FILINFO nextEntry;
+    FRESULT res = f_opendir(&dir, currentDirectory);
+    if (res != FR_OK) {
+        picostation::debug::print("f_opendir error: %s (%d)\n", FRESULT_str(res), res);
+        return false;
+    }
+
+    uint32_t filesProcessed = 0;
+
+    res = f_readdir(&dir, &currentEntry);
+    if (res == FR_OK && currentEntry.fname[0] != '\0') {
+        res = f_readdir(&dir, &nextEntry);
+        bool hasNext = (res == FR_OK && nextEntry.fname[0] != '\0');
+        while (true) {
+            if (!(currentEntry.fattrib & AM_HID)) {
+                if (pathContainsFilter(currentEntry.fname)) {
+                    if (filesProcessed == index) {
+                        strncpy(filePath, currentEntry.fname, c_maxFilePathLength);
+                        f_closedir(&dir);
+                        return true;
+                    }
+                    filesProcessed++;
+                }
+            }
+            if (!hasNext) {
+                break;
+            }
+            currentEntry = nextEntry;
+            res = f_readdir(&dir, &nextEntry);
+            hasNext = (res == FR_OK && nextEntry.fname[0] != '\0');
+        }
+    }
+
+    f_closedir(&dir);
+    return false;
+}
+
 
 }  // namespace picostation

@@ -96,10 +96,10 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
     int loadedSector[2];
     int currentSector = -1;
     m_sectorSending = -1;
-    int loadedImageIndex = -1;
+    int loadedImageIndex = 0;
     int filesinDir = 0;
 
-    g_imageIndex = 0;
+    g_imageIndex = -1;
 
     int dmaChannel = initDMA(pioSamples[0], c_cdSamplesSize * 2);
 
@@ -128,7 +128,6 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
     picostation::DirectoryListing::getDirectoryEntries(0);
     //printf("Directorylisting Entry count: %i", directoryDetails.fileEntryCount);
 
-    int firstboot = 1;
     while (true) {
         // Update latching, output SENS
 
@@ -141,19 +140,17 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
         const int imageIndex = g_imageIndex.Load();
 
         // Hacky load image from target data location
+        if (imageIndex == -1) {
+            s_dataLocation = picostation::DiscImage::DataLocation::RAM;
+        } else {
+            s_dataLocation = picostation::DiscImage::DataLocation::SDCard;
+        }
 
-        if (loadedImageIndex != imageIndex) {
-            if (firstboot == 1) {
-                printf("first boot!\n");
-                firstboot = 0;
-            } else {
-                printf("change to SD!\n");
-                s_dataLocation = picostation::DiscImage::DataLocation::SDCard;
-            }
+        if (loadedImageIndex != imageIndex || g_fileListingState.Load() == FileListingStates::MOUNT_FILE) {
             printf("image changed! %d\n", loadedImageIndex);
             if (s_dataLocation == picostation::DiscImage::DataLocation::SDCard) {
                 char filePath[c_maxFilePathLength + 1];
-                picostation::DirectoryListing::getDirectoryEntry(imageIndex, filePath);
+                picostation::DirectoryListing::getPath(imageIndex, filePath);
                 g_discImage.load(filePath);
                 printf("get from SD!\n");
             } else if (s_dataLocation == picostation::DiscImage::DataLocation::RAM) {
@@ -193,7 +190,6 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
                 printf("Processing MOUNT_FILE\n");
                 // move mounting here;
             }
-            g_fileListingState = FileListingStates::IDLE;
         }
 
         // Data sent via DMA, load the next sector
@@ -204,7 +200,7 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
 
             int16_t* sectorData = nullptr;
 
-            if ((currentSector - c_leadIn - c_preGap) == 100) {
+            if ((currentSector - c_leadIn - c_preGap) == 100 && g_fileListingState.Load() == FileListingStates::IDLE) {
 
                 g_discImage.buildSector(currentSector - c_leadIn, userData, picostation::DirectoryListing::getFileListingData(), 2324);
                 //printf("Sector 100 load\n");
@@ -225,6 +221,8 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
                         break;
                     }
                 }
+
+                cache_hit = -1;
 
                 if (cache_hit == -1) {
                     g_discImage.readSector(cdSamples[roundRobinCacheIndex], currentSector - c_leadIn, s_dataLocation);
@@ -269,6 +267,8 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
             sectorCount++;
 #endif
         }
+
+        g_fileListingState = FileListingStates::IDLE;
 
         // Start the next transfer if the DMA channel is not busy
         if (!dma_channel_is_busy(dmaChannel)) {
