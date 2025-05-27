@@ -222,8 +222,6 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
                     }
                 }
 
-                cache_hit = -1;
-
                 if (cache_hit == -1) {
                     g_discImage.readSector(cdSamples[roundRobinCacheIndex], currentSector - c_leadIn, s_dataLocation);
                     cachedSectors[roundRobinCacheIndex] = currentSector;
