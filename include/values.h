@@ -10,6 +10,7 @@
 // GPIO pinouts
 namespace Pin {
 enum : unsigned int {
+    NOT_USED = 31,
     XLAT = GPIO_XLAT,
     SQCK = GPIO_SQCK,
     LMTSW = GPIO_LMTSW,
@@ -29,7 +30,14 @@ enum : unsigned int {
     CLK = GPIO_CLK,
     LED = GPIO_LED,
     CMD_DATA = GPIO_CMD_DATA,
-    CMD_CK = GPIO_CMD_CK
+    CMD_CK = GPIO_CMD_CK,
+    EXP_I2C0_SDA = GPIO_EXP_I2C0_SDA,
+    EXP_I2C0_SCL = GPIO_EXP_I2C0_SCL,
+    EXP_I2C1_SDA = GPIO_EXP_I2C1_SDA,
+    EXP_I2C1_SCL = GPIO_EXP_I2C1_SCL,
+    EXP_BUTTON0 = GPIO_EXP_BUTTON0,
+    EXP_BUTTON1 = GPIO_EXP_BUTTON1,
+    EXP_BUTTON2 = GPIO_EXP_BUTTON2
 };
 constexpr unsigned int allPins[] = {XLAT, SQCK, LMTSW, SCEX_DATA, DOOR, RESET,    SENS,  DA15,
                                     DA16, LRCK, SCOR,  SQSO,      CLK,  CMD_DATA, CMD_CK};

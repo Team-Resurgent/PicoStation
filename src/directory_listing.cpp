@@ -129,18 +129,17 @@ bool DirectoryListing::getDirectoryEntries(const uint32_t offset) {
 
     uint32_t fileEntryCount = 0;
     uint32_t filesProcessed = 0;
-    uint8_t hasNext = 1;
+    uint8_t hasNext = 0;
 
     res = f_readdir(&dir, &currentEntry);
     if (res == FR_OK && currentEntry.fname[0] != '\0') {
         res = f_readdir(&dir, &nextEntry);
-        bool hasNext = (res == FR_OK && nextEntry.fname[0] != '\0');
+        hasNext = (res == FR_OK && nextEntry.fname[0] != '\0') ? 1 : 0;
         while (true) {
             if (!(currentEntry.fattrib & AM_HID)) {
                 if (pathContainsFilter(currentEntry.fname)) {
                     if (filesProcessed >= offset) {
-                        if (fileListing->addString(currentEntry.fname, currentEntry.fattrib & AM_DIR ? 1 : 0) ==
-                            false) {
+                        if (fileListing->addString(currentEntry.fname, currentEntry.fattrib & AM_DIR ? 1 : 0) == false) {
                             break;
                         }
                         fileEntryCount++;
@@ -148,12 +147,12 @@ bool DirectoryListing::getDirectoryEntries(const uint32_t offset) {
                     filesProcessed++;
                 }
             }
-            if (!hasNext) {
+            if (hasNext == 0) {
                 break;
             }
             currentEntry = nextEntry;
             res = f_readdir(&dir, &nextEntry);
-            hasNext = (res == FR_OK && nextEntry.fname[0] != '\0');
+            hasNext = (res == FR_OK && nextEntry.fname[0] != '\0') ? 1 : 0;
         }
     }
     fileListing->addTerminator(hasNext);
