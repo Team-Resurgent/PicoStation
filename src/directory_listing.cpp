@@ -157,7 +157,6 @@ bool DirectoryListing::getDirectoryEntries(const uint32_t offset) {
     }
     fileListing->addTerminator(hasNext ? 1 : 0);
     f_closedir(&dir);
-    picostation::debug::print("Files found %i\n", fileEntryCount);
     return true;
 }
 

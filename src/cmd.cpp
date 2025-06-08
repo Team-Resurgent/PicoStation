@@ -147,7 +147,7 @@ inline void picostation::MechCommand::customCommand(const uint32_t latched) {
             g_fileListingState = FileListingStates::GOTO_DIRECTORY;
             break;
         case 0x4: 
-            picostation::debug::print("GET_NEXT_CONTENTS\n");
+            //picostation::debug::print("GET_NEXT_CONTENTS\n");
             g_fileListingState = FileListingStates::GET_NEXT_CONTENTS;
             break;
         case 0x5:

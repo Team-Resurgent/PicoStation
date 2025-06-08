@@ -185,7 +185,7 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
                 picostation::DirectoryListing::gotoDirectory(g_fileArg.Load());
                 picostation::DirectoryListing::getDirectoryEntries(0);
             } else  if (g_fileListingState.Load() == FileListingStates::GET_NEXT_CONTENTS) {
-                printf("Processing GET_NEXT_CONTENTS\n");
+                picostation::DirectoryListing::getDirectoryEntries(g_fileArg.Load());
             } else  if (g_fileListingState.Load() == FileListingStates::MOUNT_FILE) {
                 printf("Processing MOUNT_FILE\n");
                 // move mounting here;
