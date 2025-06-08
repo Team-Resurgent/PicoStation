@@ -147,12 +147,12 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
         }
 
         if (loadedImageIndex != imageIndex || g_fileListingState.Load() == FileListingStates::MOUNT_FILE) {
-            printf("image changed! %d\n", loadedImageIndex);
+            printf("image changed! to %i %i\n", loadedImageIndex, imageIndex);
             if (s_dataLocation == picostation::DiscImage::DataLocation::SDCard) {
                 char filePath[c_maxFilePathLength + 1];
                 picostation::DirectoryListing::getPath(imageIndex, filePath);
                 g_discImage.load(filePath);
-                printf("get from SD!\n");
+                printf("get from SD! %s\n", filePath);
             } else if (s_dataLocation == picostation::DiscImage::DataLocation::RAM) {
                 g_discImage.makeDummyCue();
                 printf("get from ram!\n");
