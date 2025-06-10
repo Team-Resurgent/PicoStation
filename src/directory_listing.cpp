@@ -139,7 +139,7 @@ bool DirectoryListing::getDirectoryEntries(const uint32_t offset) {
             if (!(currentEntry.fattrib & AM_HID)) {
                 if (pathContainsFilter(currentEntry.fname)) {
                     if (filesProcessed >= offset) {
-                        if (fileListing->addString(currentEntry.fname, currentEntry.fattrib & AM_DIR) == false) {
+                        if (fileListing->addString(currentEntry.fname, currentEntry.fattrib & AM_DIR ? 1 : 0) == false) {
                             break;
                         }
                         fileEntryCount++;
