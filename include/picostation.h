@@ -28,6 +28,18 @@ enum class FileListingStates {
     MOUNT_FILE
 };
 
+enum class Command {
+    COMMAND_NONE = 0x0,
+    COMMAND_GOTO_ROOT = 0x1,
+    COMMAND_GOTO_PARENT = 0x2,
+    COMMAND_GOTO_DIRECTORY = 0x3,
+    COMMAND_GET_NEXT_CONTENTS = 0x4,
+    COMMAND_MOUNT_FILE = 0x5,
+    COMMAND_IO_COMMAND = 0x6,
+    COMMAND_IO_DATA = 0x7,
+    COMMAND_BOOTLOADER = 0xA
+};
+
 extern pseudoatomic<FileListingStates> g_fileListingState;
 extern pseudoatomic<uint32_t> g_fileArg;
 

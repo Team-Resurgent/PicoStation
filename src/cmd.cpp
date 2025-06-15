@@ -126,37 +126,73 @@ inline void picostation::MechCommand::autoSequence(const uint32_t latched)  // $
 }
 
 inline void picostation::MechCommand::customCommand(const uint32_t latched) {
-    const uint32_t subCommand = (latched & 0x0F0000) >> 16;
+    const Command subCommand = (Command)((latched & 0x0F0000) >> 16);
     const uint32_t arg = (latched & 0xFFFF);
     g_fileArg = arg;
     printf("Custom command: %x %x\n", subCommand, arg);
     switch (subCommand) {
-        case 0x0:
+        case Command::COMMAND_NONE:
             g_fileListingState = FileListingStates::IDLE;
             break;
-        case 0x1:
+        case Command::COMMAND_GOTO_ROOT:
             picostation::debug::print("GOTO_ROOT\n");
             g_fileListingState = FileListingStates::GOTO_ROOT;
             break;
-        case 0x2: 
+        case Command::COMMAND_GOTO_PARENT: 
             picostation::debug::print("GOTO_PARENT\n");
             g_fileListingState = FileListingStates::GOTO_PARENT;
             break;
-        case 0x3: 
+        case Command::COMMAND_GOTO_DIRECTORY:
             picostation::debug::print("GOTO_DIRECTORY\n");
             g_fileListingState = FileListingStates::GOTO_DIRECTORY;
             break;
-        case 0x4: 
+        case Command::COMMAND_GET_NEXT_CONTENTS: 
             //picostation::debug::print("GET_NEXT_CONTENTS\n");
             g_fileListingState = FileListingStates::GET_NEXT_CONTENTS;
             break;
-        case 0x5:
+        case Command::COMMAND_MOUNT_FILE:
             picostation::debug::print("MOUNT_FILE\n");
             printf("disc image change: %x %x\n", subCommand, arg);
             g_fileListingState = FileListingStates::MOUNT_FILE;
             g_imageIndex = arg; //todo use g_fileArg instead
             break;
-        case 0xa:
+        case Command::COMMAND_IO_COMMAND:
+            picostation::debug::print("COMMAND_IO_COMMAND %x\n", arg);
+            if (arg == 1)
+            {
+                ioCommand = 1;
+                memset(gameId, 0, sizeof(gameId));
+                gameIdIndex = 0;
+            }
+            break;
+        case Command::COMMAND_IO_DATA:
+            picostation::debug::print("COMMAND_IO_DATA %x\n", arg);
+            if (ioCommand == 1)
+            {
+                uint8_t value1 = (uint8_t)((arg >> 8) & 0xFF);
+                if (value1 == 0)
+                {
+                    picostation::debug::print("GOT GAMEID %s\n", gameId);
+                    break;
+                }
+                if (gameIdIndex < gameIdLen) {
+
+                    gameId[gameIdIndex] = value1;
+                    gameIdIndex++;
+                }
+                uint8_t value2 = (uint8_t)(arg & 0xFF);
+                if (value2 == 0)
+                {
+                    picostation::debug::print("GOT GAMEID %s\n", gameId);
+                    break;
+                }
+                if (gameIdIndex < gameIdLen) {
+                    gameId[gameIdIndex] = value2;
+                    gameIdIndex++;
+                }
+            }
+            break;
+        case Command::COMMAND_BOOTLOADER:
             if (arg == 0xBEEF) {
                 // Restart into bootloader
                 rom_reset_usb_boot_extra(Pin::LED, 0, false);
