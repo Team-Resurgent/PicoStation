@@ -3,12 +3,12 @@
 #include <ctype.h>
 #include <stddef.h>
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "f_util.h"
 #include "ff.h"
+#include "loaderImage.h"
 #include "logging.h"
 #include "picostation.h"
 #include "subq.h"
@@ -22,9 +22,6 @@
 #else
 #define DEBUG_PRINT(...) while (0)
 #endif
-
-extern const uint8_t  loaderImage[];
-extern const uint32_t loaderImageSize;
 
 struct MSF {
     int mm;
@@ -100,7 +97,7 @@ static void getParentPath(const TCHAR *path, TCHAR *parentPath) {
     }
 }
 
-void picostation::DiscImage::buildSector(const int sector, uint8_t *buffer, uint8_t *userData, uint16_t userDataSize) {
+void picostation::DiscImage::buildSector(const int sector, uint8_t *buffer, uint8_t *userData) {
     // Clear the buffer to avoid garbage data
     memset(buffer, 0, c_cdSamplesBytes);
 
@@ -126,7 +123,7 @@ void picostation::DiscImage::buildSector(const int sector, uint8_t *buffer, uint
     // buffer[22] = 0;                // Submode
     // buffer[23] = 0;                // Coding information
 
-    memcpy(buffer + 24, userData, userDataSize);
+    memcpy(buffer + 24, userData, 2324);
 
     // EDC/ECC - 4 bytes
     // compute_edcecc(buffer);
@@ -408,7 +405,7 @@ void picostation::DiscImage::readSector(void *buffer, const int sector, DataLoca
 void picostation::DiscImage::readSectorRAM(void *buffer, const int sector) {
     const int adjustedSector = sector - c_preGap;
     size_t targetOffset = adjustedSector * c_cdSamplesBytes;
-    if (targetOffset >= 0 && targetOffset <= loaderImageSize - c_cdSamplesBytes) {
+    if (targetOffset >= 0 && targetOffset <= sizeof(loaderImage) - c_cdSamplesBytes) {
         memcpy(buffer, &loaderImage[targetOffset], c_cdSamplesBytes);
     } else {
         buildSector(sector, static_cast<uint8_t *>(buffer), s_userData);

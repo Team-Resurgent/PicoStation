@@ -4,23 +4,8 @@
 #include "pico/stdlib.h"
 #include "picostation.h"
 #include "pseudo_atomics.h"
-#include <cstdio>
-#include <csignal>
-
-void crash_handler(int sig) {
-    printf("Crash detected: Signal %d\n", sig);
-    while (1)
-    {
-        tight_loop_contents();
-    }
-    
-}
 
 int main() {
-
-    signal(SIGSEGV, crash_handler);
-    signal(SIGABRT, crash_handler);
-
     vreg_set_voltage(VREG_VOLTAGE_1_15);  // Increase the VREG voltage to 1.15V for the faster clock speed
     sleep_ms(100); // Wait for the voltage to stabilize
 

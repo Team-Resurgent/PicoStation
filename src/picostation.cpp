@@ -63,8 +63,6 @@ static picostation::PWMSettings pwmLRClock = {
 
 static picostation::PWMSettings pwmMainClock = {.gpio = Pin::CLK, .wrap = 1, .clkdiv = 2, .invert = false, .level = 1};
 
-static FATFS s_fatFS;
-
 static void initPWM(picostation::PWMSettings *settings);
 static void interruptHandler(unsigned int gpio, uint32_t events);
 
@@ -167,13 +165,6 @@ static void interruptHandler(unsigned int gpio, uint32_t events) {
     __builtin_unreachable();
 }
 
-void mountSDCard() {
-    FRESULT fr = f_mount(&s_fatFS, "", 1);
-    if (FR_OK != fr) {
-        panic("f_mount error: %s (%d)\n", FRESULT_str(fr), fr);
-    }
-}
-
 void picostation::initHW() {
 #if DEBUG_LOGGING_ENABLED
     stdio_init_all();
@@ -248,8 +239,6 @@ void picostation::initHW() {
     gpio_set_irq_enabled_with_callback(Pin::XLAT, GPIO_IRQ_EDGE_FALL, true, &interruptHandler);
 
     pio_sm_set_enabled(PIOInstance::MECHACON, SM::MECHACON, true);
-
-    mountSDCard();
 
     g_coreReady[0] = false;
     g_coreReady[1] = false;

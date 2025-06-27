@@ -34,8 +34,7 @@ static spi_t spi = {
     //.baud_rate = 125 * 1000 * 1000 / 6  // 20833333 Hz
     //.baud_rate = 125 * 1000 * 1000 / 4  // 31250000 Hz
     //.baud_rate = 125 * 1000 * 1000 / 2  // 62500000 Hz
-    //.baud_rate = (271200 * 1000) / 9,  // 30133333 Hz
-    .baud_rate = 30 * 1000 * 1000
+    .baud_rate = (271200 * 1000) / 9,  // 30133333 Hz
 };
 
 /* SPI Interface */

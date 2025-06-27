@@ -39,7 +39,8 @@
 pseudoatomic<int> g_imageIndex;  // To-do: Implement a console side menu to select the cue file
 pseudoatomic<int> g_listingMode;
 
-picostation::DiscImage::DataLocation s_dataLocation = picostation::DiscImage::DataLocation::RAM;
+static picostation::DiscImage::DataLocation s_dataLocation = picostation::DiscImage::DataLocation::SDCard;
+static FATFS s_fatFS;
 
 constexpr std::array<uint16_t, 1176> picostation::I2S::generateScramblingLUT() {
     std::array<uint16_t, 1176> cdScramblingLUT = {0};
@@ -67,6 +68,8 @@ constexpr std::array<uint16_t, 1176> picostation::I2S::generateScramblingLUT() {
 
 // this need to be moved to diskimage (s_userdata)
 static uint8_t userData[c_cdSamplesBytes] = {0};
+void picostation::I2S::mountSDCard() {
+    FRESULT fr = f_mount(&s_fatFS, "", 1);
 
 int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int transfer_count) {
     int channel = dma_claim_unused_channel(true);
