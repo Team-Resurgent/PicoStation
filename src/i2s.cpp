@@ -70,6 +70,10 @@ constexpr std::array<uint16_t, 1176> picostation::I2S::generateScramblingLUT() {
 static uint8_t userData[c_cdSamplesBytes] = {0};
 void picostation::I2S::mountSDCard() {
     FRESULT fr = f_mount(&s_fatFS, "", 1);
+    if (FR_OK != fr) {
+        panic("f_mount error: %s (%d)\n", FRESULT_str(fr), fr);
+    }
+}
 
 int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int transfer_count) {
     int channel = dma_claim_unused_channel(true);
@@ -103,6 +107,8 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
     int filesinDir = 0;
 
     g_imageIndex = -1;
+
+    mountSDCard();
 
     int dmaChannel = initDMA(pioSamples[0], c_cdSamplesSize * 2);
 
@@ -155,10 +161,8 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
                 char filePath[c_maxFilePathLength + 1];
                 picostation::DirectoryListing::getPath(imageIndex, filePath);
                 g_discImage.load(filePath);
-                printf("get from SD! %s\n", filePath);
             } else if (s_dataLocation == picostation::DiscImage::DataLocation::RAM) {
                 g_discImage.makeDummyCue();
-                printf("get from ram!\n");
             }
 
             loadedImageIndex = imageIndex;
@@ -205,7 +209,7 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
 
             if ((currentSector - c_leadIn - c_preGap) == 100 && g_fileListingState.Load() == FileListingStates::IDLE) {
 
-                g_discImage.buildSector(currentSector - c_leadIn, userData, picostation::DirectoryListing::getFileListingData(), 2324);
+                g_discImage.buildSector(currentSector - c_leadIn, userData, picostation::DirectoryListing::getFileListingData());
                 //printf("Sector 100 load\n");
 
                 sectorData = reinterpret_cast<int16_t *>(userData);
