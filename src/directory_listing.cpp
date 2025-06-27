@@ -42,7 +42,7 @@ bool DirectoryListing::gotoDirectory(const uint32_t index) {
     {
         combinePaths(currentDirectory, newFolder, currentDirectory);
     }
-    picostation::debug::print("gotoDirectory: %s\n", currentDirectory);
+    //picostation::debug::print("gotoDirectory: %s\n", currentDirectory);
     return result;
 }
 
@@ -121,7 +121,7 @@ bool DirectoryListing::getDirectoryEntries(const uint32_t offset) {
     FILINFO nextEntry;
     FRESULT res = f_opendir(&dir, currentDirectory);
     if (res != FR_OK) {
-        picostation::debug::print("f_opendir error: %s (%d)\n", FRESULT_str(res), res);
+        //picostation::debug::print("f_opendir error: %s (%d)\n", FRESULT_str(res), res);
         return false;
     }
 
@@ -137,15 +137,17 @@ bool DirectoryListing::getDirectoryEntries(const uint32_t offset) {
         hasNext = (res == FR_OK && nextEntry.fname[0] != '\0');
         while (true) {
             if (!(currentEntry.fattrib & AM_HID)) {
-                if (pathContainsFilter(currentEntry.fname)) {
-                    if (filesProcessed >= offset) {
-                        if (fileListing->addString(currentEntry.fname, currentEntry.fattrib & AM_DIR ? 1 : 0) == false) {
-                            break;
-                        }
-                        fileEntryCount++;
-                    }
-                    filesProcessed++;
-                }
+				if ((currentEntry.fattrib & AM_DIR) || strstr(currentEntry.fname, ".cue")) {
+					if (pathContainsFilter(currentEntry.fname)) {
+						if (filesProcessed >= offset) {
+							if (fileListing->addString(currentEntry.fname, currentEntry.fattrib & AM_DIR ? 1 : 0) == false) {
+								break;
+							}
+							fileEntryCount++;
+						}
+						filesProcessed++;
+					}
+				}
             }
             if (hasNext == 0) {
                 break;
@@ -183,7 +185,7 @@ bool DirectoryListing::getDirectoryEntry(const uint32_t index, char* filePath) {
     FILINFO nextEntry;
     FRESULT res = f_opendir(&dir, currentDirectory);
     if (res != FR_OK) {
-        picostation::debug::print("f_opendir error: %s (%d)\n", FRESULT_str(res), res);
+        //picostation::debug::print("f_opendir error: %s (%d)\n", FRESULT_str(res), res);
         return false;
     }
 
@@ -195,14 +197,16 @@ bool DirectoryListing::getDirectoryEntry(const uint32_t index, char* filePath) {
         bool hasNext = (res == FR_OK && nextEntry.fname[0] != '\0');
         while (true) {
             if (!(currentEntry.fattrib & AM_HID)) {
-                if (pathContainsFilter(currentEntry.fname)) {
-                    if (filesProcessed == index) {
-                        strncpy(filePath, currentEntry.fname, c_maxFilePathLength);
-                        f_closedir(&dir);
-                        return true;
-                    }
-                    filesProcessed++;
-                }
+				if ((currentEntry.fattrib & AM_DIR) || strstr(currentEntry.fname, ".cue")) {
+					if (pathContainsFilter(currentEntry.fname)) {
+						if (filesProcessed == index) {
+							strncpy(filePath, currentEntry.fname, c_maxFilePathLength);
+							f_closedir(&dir);
+							return true;
+						}
+						filesProcessed++;
+					}
+				}
             }
             if (!hasNext) {
                 break;

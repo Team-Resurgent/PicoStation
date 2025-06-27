@@ -9,11 +9,9 @@
 
 void crash_handler(int sig) {
     printf("Crash detected: Signal %d\n", sig);
-    while (1)
-    {
+    while (1) {
         tight_loop_contents();
     }
-    
 }
 
 int main() {

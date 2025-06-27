@@ -15,7 +15,6 @@
 #include "pseudo_atomics.h"
 #include "subq.h"
 #include "values.h"
-#include "f_util.h"
 #include "debug.h"
 
 #if DEBUG_MAIN
@@ -47,7 +46,6 @@ unsigned int picostation::g_audioCtrlMode = audioControlModes::NORMAL;
 
 pseudoatomic<picostation::FileListingStates> picostation::g_fileListingState;
 pseudoatomic<uint32_t> picostation::g_fileArg;
-extern pseudoatomic<int> g_imageIndex;
 
 static unsigned int s_mechachonOffset;
 unsigned int picostation::g_soctOffset;
@@ -62,8 +60,6 @@ static picostation::PWMSettings pwmLRClock = {
     .gpio = Pin::LRCK, .wrap = (48 * 32) - 1, .clkdiv = 4, .invert = false, .level = (48 * (32 / 2))};
 
 static picostation::PWMSettings pwmMainClock = {.gpio = Pin::CLK, .wrap = 1, .clkdiv = 2, .invert = false, .level = 1};
-
-static FATFS s_fatFS;
 
 static void initPWM(picostation::PWMSettings *settings);
 static void interruptHandler(unsigned int gpio, uint32_t events);
@@ -167,13 +163,6 @@ static void interruptHandler(unsigned int gpio, uint32_t events) {
     __builtin_unreachable();
 }
 
-void mountSDCard() {
-    FRESULT fr = f_mount(&s_fatFS, "", 1);
-    if (FR_OK != fr) {
-        panic("f_mount error: %s (%d)\n", FRESULT_str(fr), fr);
-    }
-}
-
 void picostation::initHW() {
 #if DEBUG_LOGGING_ENABLED
     stdio_init_all();
@@ -249,8 +238,6 @@ void picostation::initHW() {
 
     pio_sm_set_enabled(PIOInstance::MECHACON, SM::MECHACON, true);
 
-    mountSDCard();
-
     g_coreReady[0] = false;
     g_coreReady[1] = false;
 
@@ -288,7 +275,6 @@ void picostation::updatePlaybackSpeed() {
 
 void picostation::reset() {
     DEBUG_PRINT("RESET!\n");
-    g_imageIndex = -1;
     pio_sm_set_enabled(PIOInstance::SUBQ, SM::SUBQ, false);
     pio_sm_set_enabled(PIOInstance::SOCT, SM::SOCT, false);
     pio_sm_restart(PIOInstance::MECHACON, SM::MECHACON);

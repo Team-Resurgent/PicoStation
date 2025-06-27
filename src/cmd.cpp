@@ -129,7 +129,7 @@ inline void picostation::MechCommand::customCommand(const uint32_t latched) {
     const Command subCommand = (Command)((latched & 0x0F0000) >> 16);
     const uint32_t arg = (latched & 0xFFFF);
     g_fileArg = arg;
-    printf("Custom command: %x %x\n", subCommand, arg);
+    //printf("Custom command: %x %x\n", subCommand, arg);
     switch (subCommand) {
         case Command::COMMAND_NONE:
             g_fileListingState = FileListingStates::IDLE;
@@ -147,12 +147,12 @@ inline void picostation::MechCommand::customCommand(const uint32_t latched) {
             g_fileListingState = FileListingStates::GOTO_DIRECTORY;
             break;
         case Command::COMMAND_GET_NEXT_CONTENTS: 
-            //DEBUG_PRINT("GET_NEXT_CONTENTS\n");
+            DEBUG_PRINT("GET_NEXT_CONTENTS\n");
             g_fileListingState = FileListingStates::GET_NEXT_CONTENTS;
             break;
         case Command::COMMAND_MOUNT_FILE:
             DEBUG_PRINT("MOUNT_FILE\n");
-            printf("disc image change: %x %x\n", subCommand, arg);
+            //printf("disc image change: %x %x\n", subCommand, arg);
             g_fileListingState = FileListingStates::MOUNT_FILE;
             g_imageIndex = arg; //todo use g_fileArg instead
             break;
