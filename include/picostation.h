@@ -19,15 +19,6 @@ enum : unsigned int {
 };
 }
 
-enum class FileListingStates {
-    IDLE,
-    GOTO_ROOT,
-    GOTO_PARENT,
-    GOTO_DIRECTORY,
-    GET_NEXT_CONTENTS,
-    MOUNT_FILE
-};
-
 enum class Command {
     COMMAND_NONE = 0x0,
     COMMAND_GOTO_ROOT = 0x1,
@@ -38,6 +29,16 @@ enum class Command {
     COMMAND_IO_COMMAND = 0x6,
     COMMAND_IO_DATA = 0x7,
     COMMAND_BOOTLOADER = 0xA
+};
+
+enum class FileListingStates {
+    IDLE,
+    GOTO_ROOT,
+    GOTO_PARENT,
+    GOTO_DIRECTORY,
+    GET_NEXT_CONTENTS,
+    MOUNT_FILE,
+    PROCESS_FILES,
 };
 
 extern pseudoatomic<FileListingStates> g_fileListingState;

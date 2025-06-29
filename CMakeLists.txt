@@ -96,7 +96,9 @@ addBinaryFileWithSize(${PROJECT_NAME} loaderImage loaderImageSize binary/picosta
 target_sources(
     ${PROJECT_NAME} PRIVATE
     src/cmd.cpp
+    src/debug.cpp
     src/disc_image.cpp
+    src/directory_listing.cpp
     src/drive_mechanics.cpp
     src/hw_config.cpp
     src/i2s.cpp
@@ -105,8 +107,6 @@ target_sources(
     src/picostation.cpp
     src/subq.cpp
     src/utils.cpp
-    src/debug.cpp
-    src/directory_listing.cpp
     third_party/cueparser/cueparser.c
     third_party/cueparser/fileabstract.c
     third_party/cueparser/scheduler.c
@@ -135,6 +135,7 @@ target_link_libraries(
     hardware_pio
     hardware_pwm
     hardware_vreg
+    hardware_i2c
     no-OS-FatFS-SD-SDIO-SPI-RPi-Pico
     pico_bootrom
     pico_multicore

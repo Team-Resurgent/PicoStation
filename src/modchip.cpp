@@ -9,10 +9,9 @@
 #include "pico/stdlib.h"
 #include "picostation.h"
 #include "values.h"
-#include "debug.h"
 
 #if DEBUG_MODCHIP
-#define DEBUG_PRINT(...) picostation::debug::print(__VA_ARGS__)
+#define DEBUG_PRINT(...) printf(__VA_ARGS__)
 #else
 #define DEBUG_PRINT(...) while (0)
 #endif
@@ -70,11 +69,11 @@ void picostation::ModChip::sendLicenseString(const int sector, MechCommand &mech
 
             if (modchip_hysteresis > 100) {
                 modchip_hysteresis = 0;
-                DEBUG_PRINT("+SCEX\n");
+            //    DEBUG_PRINT("+SCEX\n");
 
                 // Send the 3 license strings, twice each
                 for (int i = 0; i < 6 && waitWithAbort(90000U); i++) {
-                    DEBUG_PRINT("%s\n", s_licenseData[i % 3]);
+            //        DEBUG_PRINT("%s\n", s_licenseData[i % 3]);
                     uart_puts(uart1, s_licenseData[i % 3]);
                     uart_tx_wait_blocking(uart1);
                 }

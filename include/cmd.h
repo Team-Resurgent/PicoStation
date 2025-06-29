@@ -53,11 +53,6 @@ class MechCommand {
     alarm_id_t m_autoSeqAlarmID = 0;
     int m_autoSeqTrack = 0;
     int m_jumpTrack = 0;
-
-    uint16_t ioCommand = 0;
-    static const uint8_t gameIdLen = 32;
-    char gameId[gameIdLen + 1];
-    uint16_t gameIdIndex = 0;
     uint32_t m_latched = 0;  // Command latch
 
     size_t m_currentSens = 0;

@@ -15,11 +15,11 @@
 #include "pseudo_atomics.h"
 #include "subq.h"
 #include "values.h"
-#include "f_util.h"
-#include "debug.h"
+#include <string.h>
+#include <directory_listing.h>
 
 #if DEBUG_MAIN
-#define DEBUG_PRINT(...) picostation::debug::print(__VA_ARGS__)
+#define DEBUG_PRINT(...) printf(__VA_ARGS__)
 #else
 #define DEBUG_PRINT(...) while (0)
 #endif
@@ -32,6 +32,11 @@
 // To-do: Make an ODE class and move these to members
 static picostation::I2S m_i2s;
 static picostation::MechCommand m_mechCommand;
+extern pseudoatomic<picostation::FileListingStates> needFileCheckAction;
+extern pseudoatomic<int> g_imageIndex;
+extern pseudoatomic<int> listReadyState;
+extern pseudoatomic<int> g_listOffset;
+extern pseudoatomic<int> g_entryOffset;
 
 bool picostation::g_subqDelay = false;  // core0: r/w
 
@@ -47,13 +52,18 @@ unsigned int picostation::g_audioCtrlMode = audioControlModes::NORMAL;
 
 pseudoatomic<picostation::FileListingStates> picostation::g_fileListingState;
 pseudoatomic<uint32_t> picostation::g_fileArg;
-extern pseudoatomic<int> g_imageIndex;
+
+enum class ResetType {
+    RESET_NONE = 0x0,
+    RESET_SHORT = 0x1,
+    RESET_LONG = 0x2,
+};
 
 static unsigned int s_mechachonOffset;
 unsigned int picostation::g_soctOffset;
 unsigned int picostation::g_subqOffset;
-
-static bool s_resetPending = false;
+static ResetType s_resetPending = ResetType::RESET_NONE;
+static bool s_doorPending = false;
 
 static picostation::PWMSettings pwmDataClock = {
     .gpio = Pin::DA15, .wrap = (1 * 32) - 1, .clkdiv = 4, .invert = true, .level = (32 / 2)};
@@ -63,18 +73,15 @@ static picostation::PWMSettings pwmLRClock = {
 
 static picostation::PWMSettings pwmMainClock = {.gpio = Pin::CLK, .wrap = 1, .clkdiv = 2, .invert = false, .level = 1};
 
-static FATFS s_fatFS;
-
 static void initPWM(picostation::PWMSettings *settings);
 static void interruptHandler(unsigned int gpio, uint32_t events);
-
 static void interruptHandler(unsigned int gpio, uint32_t events) {
-    static uint32_t lastLowEvent = 0;
-
+    static uint32_t lastLowEventReset = 0;
+    static uint32_t lastLowEventDoor = 0;
     switch (gpio) {
         case Pin::RESET: {
             if (events & GPIO_IRQ_LEVEL_LOW) {
-                lastLowEvent = time_us_32();
+                lastLowEventReset = time_us_32();
                 // Disable low signal edge detection
                 gpio_set_irq_enabled(Pin::RESET, GPIO_IRQ_LEVEL_LOW, false);
                 // Enable high signal edge detection
@@ -84,17 +91,38 @@ static void interruptHandler(unsigned int gpio, uint32_t events) {
                 gpio_set_irq_enabled(Pin::RESET, GPIO_IRQ_LEVEL_HIGH, false);
 
                 const uint32_t c_now = time_us_32();
-                const uint32_t c_timeElapsed = c_now - lastLowEvent;
+                const uint32_t c_timeElapsed = c_now - lastLowEventReset;
                 if (c_timeElapsed >= 500U)  // Debounce, only reset if the pin was low for more than 500us(.5 ms)
                 {
-                    s_resetPending = true;
+                    s_resetPending = c_timeElapsed > 2000000 ? ResetType::RESET_LONG : ResetType::RESET_SHORT;
                 } else {
                     // Enable the low signal edge detection again
                     gpio_set_irq_enabled(Pin::RESET, GPIO_IRQ_LEVEL_LOW, true);
                 }
             }
         } break;
+        case Pin::DOOR: {
+            if (events & GPIO_IRQ_LEVEL_HIGH) {
+                lastLowEventDoor = time_us_32();
+                // Disable low signal edge detection
+                gpio_set_irq_enabled(Pin::DOOR, GPIO_IRQ_LEVEL_HIGH, false);
+                // Enable high signal edge detection
+                gpio_set_irq_enabled(Pin::DOOR, GPIO_IRQ_LEVEL_LOW, true);
+            } else if (events & GPIO_IRQ_LEVEL_LOW) {
+                // Disable the rising edge detection
+                gpio_set_irq_enabled(Pin::DOOR, GPIO_IRQ_LEVEL_LOW, false);
 
+                const uint32_t c_now = time_us_32();
+                const uint32_t c_timeElapsed = c_now - lastLowEventDoor;
+                if (c_timeElapsed >= 500U)  // Debounce, only reset if the pin was low for more than 500us(.5 ms)
+                {
+                    s_doorPending = true;
+                } else {
+                    // Enable the low signal edge detection again
+                    gpio_set_irq_enabled(Pin::DOOR, GPIO_IRQ_LEVEL_HIGH, true);
+                }
+            }
+        } break;
         case Pin::XLAT: {
             m_mechCommand.processLatchedCommand();
         } break;
@@ -111,7 +139,7 @@ static void interruptHandler(unsigned int gpio, uint32_t events) {
     }
 
     while (true) {
-        if (s_resetPending) {
+        if (s_resetPending != ResetType::RESET_NONE) {
             while (gpio_get(Pin::RESET) == 0) {
                 tight_loop_contents();
             }
@@ -158,6 +186,26 @@ static void interruptHandler(unsigned int gpio, uint32_t events) {
                 subqDelayTime = m_i2s.getLastSectorTime();
             }
         }
+
+        if (s_doorPending == true) 
+        {
+            if (s_dataLocation != picostation::DiscImage::DataLocation::RAM)
+            {
+                printf("image index was: %i ", g_imageIndex.Load());
+                g_imageIndex = g_imageIndex.Load() + 1;
+                printf("now it is: %i\n", g_imageIndex.Load());
+                needFileCheckAction = picostation::FileListingStates::MOUNT_FILE;
+            }
+            s_doorPending = false;
+        }
+
+        if(needFileCheckAction.Load() == picostation::FileListingStates::PROCESS_FILES && listReadyState.Load() == 0)
+        {
+            picostation::DirectoryListing::getDirectoryEntries(g_entryOffset.Load());
+            listReadyState = 1;
+        }
+
+
     }
 }
 
@@ -167,18 +215,14 @@ static void interruptHandler(unsigned int gpio, uint32_t events) {
     __builtin_unreachable();
 }
 
-void mountSDCard() {
-    FRESULT fr = f_mount(&s_fatFS, "", 1);
-    if (FR_OK != fr) {
-        panic("f_mount error: %s (%d)\n", FRESULT_str(fr), fr);
-    }
-}
-
 void picostation::initHW() {
 #if DEBUG_LOGGING_ENABLED
     stdio_init_all();
     stdio_set_chars_available_callback(NULL, NULL);
     sleep_ms(1250);
+
+     sleep_ms(5000);
+
 #endif
     DEBUG_PRINT("Initializing...\n");
 
@@ -208,6 +252,7 @@ void picostation::initHW() {
     gpio_set_input_hysteresis_enabled(Pin::XLAT, true);
     gpio_set_input_hysteresis_enabled(Pin::SQCK, true);
     gpio_set_input_hysteresis_enabled(Pin::RESET, true);
+    gpio_set_input_hysteresis_enabled(Pin::DOOR, true);
     gpio_set_input_hysteresis_enabled(Pin::CMD_CK, true);
 
     initPWM(&pwmMainClock);
@@ -245,11 +290,10 @@ void picostation::initHW() {
     }
 
     gpio_set_irq_enabled_with_callback(Pin::RESET, GPIO_IRQ_LEVEL_LOW, true, &interruptHandler);
+    gpio_set_irq_enabled_with_callback(Pin::DOOR, GPIO_IRQ_LEVEL_HIGH, true, &interruptHandler);
     gpio_set_irq_enabled_with_callback(Pin::XLAT, GPIO_IRQ_EDGE_FALL, true, &interruptHandler);
 
     pio_sm_set_enabled(PIOInstance::MECHACON, SM::MECHACON, true);
-
-    mountSDCard();
 
     g_coreReady[0] = false;
     g_coreReady[1] = false;
@@ -288,7 +332,6 @@ void picostation::updatePlaybackSpeed() {
 
 void picostation::reset() {
     DEBUG_PRINT("RESET!\n");
-    g_imageIndex = -1;
     pio_sm_set_enabled(PIOInstance::SUBQ, SM::SUBQ, false);
     pio_sm_set_enabled(PIOInstance::SOCT, SM::SOCT, false);
     pio_sm_restart(PIOInstance::MECHACON, SM::MECHACON);
@@ -307,21 +350,28 @@ void picostation::reset() {
     gpio_put(Pin::SCOR, 0);
     gpio_put(Pin::SQSO, 0);
 
-    uint64_t startTime = time_us_64();
+    uint64_t debounceTime = time_us_64();
 
-    while ((time_us_64() - startTime) < 30000) {
+    while ((time_us_64() - debounceTime) < 30000) {
         if (gpio_get(Pin::RESET) == 0) {
-            startTime = time_us_64();
+            debounceTime = time_us_64();
         }
     }
 
-    while ((time_us_64() - startTime) < 30000) {
+    while ((time_us_64() - debounceTime) < 30000) {
         if (gpio_get(Pin::CMD_CK) == 0) {
-            startTime = time_us_64();
+            debounceTime = time_us_64();
         }
+    }
+
+    if (s_resetPending == ResetType::RESET_LONG)
+    {
+        s_dataLocation = picostation::DiscImage::DataLocation::RAM;
+        picostation::DirectoryListing::gotoRoot();
     }
 
     pio_sm_set_enabled(PIOInstance::MECHACON, SM::MECHACON, true);
-    s_resetPending = false;
+    s_resetPending = ResetType::RESET_NONE;
     gpio_set_irq_enabled(Pin::RESET, GPIO_IRQ_LEVEL_LOW, true);
+    gpio_set_irq_enabled(Pin::DOOR, GPIO_IRQ_LEVEL_HIGH, true);
 }

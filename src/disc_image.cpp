@@ -9,22 +9,23 @@
 
 #include "f_util.h"
 #include "ff.h"
+//#include "loaderImage.h"
 #include "logging.h"
 #include "picostation.h"
 #include "subq.h"
 #include "third_party/iec-60908b/edcecc.h"
 #include "third_party/posix_file.h"
 #include "values.h"
-#include "debug.h"
 
 #if DEBUG_CUE
-#define DEBUG_PRINT(...) picostation::debug::print(__VA_ARGS__)
+#define DEBUG_PRINT(...) printf(__VA_ARGS__)
 #else
 #define DEBUG_PRINT(...) while (0)
 #endif
 
 extern const uint8_t  loaderImage[];
 extern const uint32_t loaderImageSize;
+
 
 struct MSF {
     int mm;
@@ -100,7 +101,7 @@ static void getParentPath(const TCHAR *path, TCHAR *parentPath) {
     }
 }
 
-void picostation::DiscImage::buildSector(const int sector, uint8_t *buffer, uint8_t *userData, uint16_t userDataSize) {
+void picostation::DiscImage::buildSector(const int sector, uint8_t *buffer, uint8_t *userData) {
     // Clear the buffer to avoid garbage data
     memset(buffer, 0, c_cdSamplesBytes);
 
@@ -126,7 +127,7 @@ void picostation::DiscImage::buildSector(const int sector, uint8_t *buffer, uint
     // buffer[22] = 0;                // Submode
     // buffer[23] = 0;                // Coding information
 
-    memcpy(buffer + 24, userData, userDataSize);
+    memcpy(buffer + 24, userData, 2324);
 
     // EDC/ECC - 4 bytes
     // compute_edcecc(buffer);

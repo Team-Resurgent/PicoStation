@@ -27,19 +27,22 @@
 #include "pseudo_atomics.h"
 #include "subq.h"
 #include "values.h"
-#include "listingBuilder.h"
-#include "debug.h"
 
 #if DEBUG_I2S
-#define DEBUG_PRINT(...) picostation::debug::print(__VA_ARGS__)
+#define DEBUG_PRINT(...) printf(__VA_ARGS__)
 #else
 #define DEBUG_PRINT(...) while (0)
 #endif
 
-pseudoatomic<int> g_imageIndex;  // To-do: Implement a console side menu to select the cue file
-pseudoatomic<int> g_listingMode;
+pseudoatomic<int> g_imageIndex;
+pseudoatomic<int> g_listOffset;
+pseudoatomic<int> g_directoryIndex;
+pseudoatomic<picostation::FileListingStates> needFileCheckAction;
+pseudoatomic<int> listReadyState;
+pseudoatomic<int> g_entryOffset;
 
 picostation::DiscImage::DataLocation s_dataLocation = picostation::DiscImage::DataLocation::RAM;
+static FATFS s_fatFS;
 
 constexpr std::array<uint16_t, 1176> picostation::I2S::generateScramblingLUT() {
     std::array<uint16_t, 1176> cdScramblingLUT = {0};
@@ -65,8 +68,16 @@ constexpr std::array<uint16_t, 1176> picostation::I2S::generateScramblingLUT() {
     return cdScramblingLUT;
 }
 
-// this need to be moved to diskimage (s_userdata)
-static uint8_t userData[c_cdSamplesBytes] = {0};
+void picostation::I2S::mountSDCard() {
+    FRESULT fr = f_mount(&s_fatFS, "", 1);
+    if (FR_OK != fr) {
+        panic("f_mount error: %s (%d)\n", FRESULT_str(fr), fr);
+    }
+}
+const unsigned int c_userDataSize = 2324;
+
+#define MAX_LINES 2000
+#define MAX_LENGTH 255
 
 int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int transfer_count) {
     int channel = dma_claim_unused_channel(true);
@@ -84,10 +95,11 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
 [[noreturn]] void __time_critical_func(picostation::I2S::start)(MechCommand &mechCommand) {
     picostation::ModChip modChip;
 
-    static constexpr size_t c_sectorCacheSize = 50;
+    static constexpr size_t c_sectorCacheSize = 1;
     int cachedSectors[c_sectorCacheSize];
     int roundRobinCacheIndex = 0;
-    static uint16_t cdSamples[c_sectorCacheSize][c_cdSamplesBytes / sizeof(uint16_t)];  // Make static to move off stack
+    static uint16_t cdSamples[c_cdSamplesBytes / sizeof(uint16_t)];  // Make static to move off stack
+
     static uint32_t pioSamples[2][(c_cdSamplesBytes * 2) / sizeof(uint32_t)];
     static constexpr auto cdScramblingLUT = generateScramblingLUT();
 
@@ -96,10 +108,14 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
     int loadedSector[2];
     int currentSector = -1;
     m_sectorSending = -1;
-    int loadedImageIndex = 0;
+    int loadedImageIndex = -1;
     int filesinDir = 0;
+    int coverOpen = 0;
 
-    g_imageIndex = -1;
+    g_imageIndex = 0;
+    g_directoryIndex = 0;
+
+        printf("start\n");
 
     int dmaChannel = initDMA(pioSamples[0], c_cdSamplesSize * 2);
 
@@ -121,116 +137,107 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
     unsigned cacheHitCount = 0;
 #endif
 
+    char lines[MAX_LINES][MAX_LENGTH];
+    int lineCount = 0;
+    int sectorNumber;
+    mountSDCard();
+    printf("mounted SD card!\n");
+
+    int firstboot = 1;
+    needFileCheckAction = picostation::FileListingStates::IDLE;
+    g_directoryIndex = -1;
+    listReadyState = 1;
+    g_entryOffset = 0;
+
+    g_discImage.makeDummyCue();
+    printf("get from ram!\n");
+    uint8_t *emptyBuffer = new uint8_t[2340];
+    uint8_t *emptyBuffer2 = new uint8_t[2340];
+    memset(emptyBuffer, 0, 2340);
+    memset(emptyBuffer2, 0, 2340);
+
+    emptyBuffer[0] = 0;
+    emptyBuffer[1] = 0;
+    //g_discImage.buildSector(100 + c_preGap, (uint8_t *)&emptyBuffer2, emptyBuffer);
+
 
     // this need to be moved to diskimage
     picostation::DirectoryListing::init();
     picostation::DirectoryListing::gotoRoot();
     picostation::DirectoryListing::getDirectoryEntries(0);
-    //printf("Directorylisting Entry count: %i", directoryDetails.fileEntryCount);
+    // printf("Directorylisting Entry count: %i", directoryDetails.fileEntryCount);
 
     while (true) {
         // Update latching, output SENS
 
         // Sector could change during the loop, so we need to keep track of it
         currentSector = g_driveMechanics.getSector();
-
         modChip.sendLicenseString(currentSector, mechCommand);
-
-        // Load the disc image if it has changed
-        const int imageIndex = g_imageIndex.Load();
-
-        // Hacky load image from target data location
-        if (imageIndex == -1) {
-            s_dataLocation = picostation::DiscImage::DataLocation::RAM;
-        } else {
-            s_dataLocation = picostation::DiscImage::DataLocation::SDCard;
-        }
-
-        if (loadedImageIndex != imageIndex || g_fileListingState.Load() == FileListingStates::MOUNT_FILE) {
-            printf("image changed! to %i %i\n", loadedImageIndex, imageIndex);
-            if (s_dataLocation == picostation::DiscImage::DataLocation::SDCard) {
-                char filePath[c_maxFilePathLength + 1];
-                picostation::DirectoryListing::getPath(imageIndex, filePath);
-                g_discImage.load(filePath);
-                printf("get from SD! %s\n", filePath);
-            } else if (s_dataLocation == picostation::DiscImage::DataLocation::RAM) {
-                g_discImage.makeDummyCue();
-                printf("get from ram!\n");
-            }
-
-            loadedImageIndex = imageIndex;
-
-            // Reset cache and loaded sectors
-            loadedSector[0] = -1;
-            loadedSector[1] = -1;
-            roundRobinCacheIndex = 0;
-            bufferForDMA = 1;
-            bufferForSDRead = 0;
-            memset(cachedSectors, -1, sizeof(cachedSectors));
-            memset(cdSamples, 0, sizeof(cdSamples));
-            memset(pioSamples, 0, sizeof(pioSamples));
-        }
-
-        if (g_fileListingState.Load() != FileListingStates::IDLE) {
-            if (g_fileListingState.Load() == FileListingStates::GOTO_ROOT) {
-                printf("Processing GOTO_ROOT\n");
-                picostation::DirectoryListing::gotoRoot();
-                picostation::DirectoryListing::getDirectoryEntries(0);
-            } else  if (g_fileListingState.Load() == FileListingStates::GOTO_PARENT) {
-                printf("Processing GOTO_PARENT\n");
-                picostation::DirectoryListing::gotoParentDirectory();
-                picostation::DirectoryListing::getDirectoryEntries(0);
-            } else  if (g_fileListingState.Load() == FileListingStates::GOTO_DIRECTORY) {
-                printf("Processing GOTO_DIRECTORY %i\n", g_fileArg.Load());
-                picostation::DirectoryListing::gotoDirectory(g_fileArg.Load());
-                picostation::DirectoryListing::getDirectoryEntries(0);
-            } else  if (g_fileListingState.Load() == FileListingStates::GET_NEXT_CONTENTS) {
-                picostation::DirectoryListing::getDirectoryEntries(g_fileArg.Load());
-            } else  if (g_fileListingState.Load() == FileListingStates::MOUNT_FILE) {
-                printf("Processing MOUNT_FILE\n");
-                // move mounting here;
-            }
-        }
 
         // Data sent via DMA, load the next sector
         if (bufferForDMA != bufferForSDRead) {
 #if DEBUG_I2S
-            startTime = time_us_64();
+            //    startTime = time_us_64();
 #endif
 
-            int16_t* sectorData = nullptr;
+            // Copy CD samples to PIO buffer
+            sectorNumber = currentSector - c_leadIn - c_preGap;
+            g_discImage.readSector(cdSamples, currentSector - c_leadIn, s_dataLocation);
 
-            if ((currentSector - c_leadIn - c_preGap) == 100 && g_fileListingState.Load() == FileListingStates::IDLE) {
-
-                g_discImage.buildSector(currentSector - c_leadIn, userData, picostation::DirectoryListing::getFileListingData(), 2324);
-                //printf("Sector 100 load\n");
-
-                sectorData = reinterpret_cast<int16_t *>(userData);
-
-            } else {
-
-                // Load the next sector
-                // Sector cache lookup/update
-                int cache_hit = -1;
-                for (size_t i = 0; i < c_sectorCacheSize; i++) {
-                    if (cachedSectors[i] == currentSector) {
-                        cache_hit = i;
-    #if DEBUG_I2S
-                        cacheHitCount++;
-    #endif
+            if (needFileCheckAction.Load() != picostation::FileListingStates::IDLE) {
+                switch (needFileCheckAction.Load()) {
+                    case picostation::FileListingStates::GOTO_ROOT: {
+                        printf("Processing GOTO_ROOT\n");
+                        picostation::DirectoryListing::gotoRoot();
+                        g_entryOffset = 0;
+                        needFileCheckAction = picostation::FileListingStates::PROCESS_FILES;
+                        break;
+                    }
+                    case picostation::FileListingStates::GOTO_PARENT: {
+                        printf("Processing GOTO_PARENT\n");
+                        picostation::DirectoryListing::gotoParentDirectory();
+                        g_entryOffset = 0;
+                        needFileCheckAction = picostation::FileListingStates::PROCESS_FILES;
+                        break;
+                    }
+                    case picostation::FileListingStates::GOTO_DIRECTORY: {
+                        printf("Processing GOTO_DIRECTORY %i\n", g_fileArg.Load());
+                        picostation::DirectoryListing::gotoDirectory(g_fileArg.Load());
+                        g_entryOffset = 0;
+                        needFileCheckAction = picostation::FileListingStates::PROCESS_FILES;
+                        break;
+                    }
+                    case picostation::FileListingStates::GET_NEXT_CONTENTS: {
+                        printf("Processing GET_NEXT_CONTENTS\n");
+                        g_entryOffset = g_fileArg.Load();
+                        needFileCheckAction = picostation::FileListingStates::PROCESS_FILES;
+                        break;
+                    }
+                    case picostation::FileListingStates::MOUNT_FILE: {
+                        printf("Processing MOUNT_FILE\n");
+                        s_dataLocation = picostation::DiscImage::DataLocation::SDCard;
+                        char filePath[c_maxFilePathLength + 1];
+                        picostation::DirectoryListing::getPath(g_fileArg.Load(), filePath);
+                        printf("image cue name:%s\n", filePath);
+                        g_discImage.load(filePath);
+                        needFileCheckAction = picostation::FileListingStates::IDLE;
                         break;
                     }
                 }
 
-                if (cache_hit == -1) {
-                    g_discImage.readSector(cdSamples[roundRobinCacheIndex], currentSector - c_leadIn, s_dataLocation);
-                    cachedSectors[roundRobinCacheIndex] = currentSector;
-                    cache_hit = roundRobinCacheIndex;
-                    roundRobinCacheIndex = (roundRobinCacheIndex + 1) % c_sectorCacheSize;
+                if (needFileCheckAction.Load() == picostation::FileListingStates::PROCESS_FILES) {
+                    if (listReadyState.Load() == 0) {
+                        g_discImage.buildSector(sectorNumber + c_preGap, (uint8_t *)&cdSamples, emptyBuffer2);
+                    } else if (sectorNumber == 100) {
+                        printf("sector 100 game read\n");
+                        uint8_t *temp = picostation::DirectoryListing::getFileListingData();
+                        g_discImage.buildSector(sectorNumber + c_preGap, (uint8_t *)&cdSamples, temp);
+                        needFileCheckAction = picostation::FileListingStates::IDLE;
+                    }
                 }
-
-                sectorData = reinterpret_cast<int16_t *>(cdSamples[cache_hit]);
             }
+
+            int16_t const *sectorData = reinterpret_cast<int16_t *>(cdSamples);
 
             // Copy CD samples to PIO buffer
             for (size_t i = 0; i < c_cdSamplesSize * 2; i++) {
@@ -251,22 +258,20 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
                 pioSamples[bufferForSDRead][i] = i2sData;
             }
 
+#if DEBUG_I2S
             loadedSector[bufferForSDRead] = currentSector;
             bufferForSDRead = (bufferForSDRead + 1) % 2;
-#if DEBUG_I2S
-            endTime = time_us_64();
-            totalTime = endTime - startTime;
-            if (totalTime < shortestTime) {
-                shortestTime = totalTime;
-            }
-            if (totalTime > longestTime) {
-                longestTime = totalTime;
-            }
+            /*    endTime = time_us_64();
+                totalTime = endTime - startTime;
+                if (totalTime < shortestTime) {
+                    shortestTime = totalTime;
+                }
+                if (totalTime > longestTime) {
+                    longestTime = totalTime;
+                }*/
             sectorCount++;
 #endif
         }
-
-        g_fileListingState = FileListingStates::IDLE;
 
         // Start the next transfer if the DMA channel is not busy
         if (!dma_channel_is_busy(dmaChannel)) {
@@ -289,8 +294,8 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
 
 #if DEBUG_I2S
         if (sectorCount >= 100) {
-            DEBUG_PRINT("min: %lluus, max: %lluus cache hits: %u/%u\n", shortestTime, longestTime, cacheHitCount,
-                        sectorCount);
+            // DEBUG_PRINT("min: %lluus, max: %lluus cache hits: %u/%u\n", shortestTime, longestTime, cacheHitCount,
+            //             sectorCount);
             sectorCount = 0;
             shortestTime = UINT64_MAX;
             longestTime = 0;
