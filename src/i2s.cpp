@@ -151,15 +151,8 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
 
     g_discImage.makeDummyCue();
     printf("get from ram!\n");
-    uint8_t *emptyBuffer = new uint8_t[2340];
-    uint8_t *emptyBuffer2 = new uint8_t[2340];
-    memset(emptyBuffer, 0, 2340);
-    memset(emptyBuffer2, 0, 2340);
-
-    emptyBuffer[0] = 0;
-    emptyBuffer[1] = 0;
-    //g_discImage.buildSector(100 + c_preGap, (uint8_t *)&emptyBuffer2, emptyBuffer);
-
+    uint8_t *emptyBuffer = new uint8_t[2324];
+    memset(emptyBuffer, 0, 2324);
 
     // this need to be moved to diskimage
     picostation::DirectoryListing::init();
@@ -227,7 +220,7 @@ int picostation::I2S::initDMA(const volatile void *read_addr, unsigned int trans
 
                 if (needFileCheckAction.Load() == picostation::FileListingStates::PROCESS_FILES) {
                     if (listReadyState.Load() == 0) {
-                        g_discImage.buildSector(sectorNumber + c_preGap, (uint8_t *)&cdSamples, emptyBuffer2);
+                        g_discImage.buildSector(sectorNumber + c_preGap, (uint8_t *)&cdSamples, emptyBuffer);
                     } else if (sectorNumber == 100) {
                         printf("sector 100 game read\n");
                         uint8_t *temp = picostation::DirectoryListing::getFileListingData();
