@@ -463,7 +463,7 @@ static void parse(struct CueParser* parser, struct CueFile* file, struct CueSche
                     return;
                 }
                 struct CueTrack* track = &parser->disc->tracks[parser->currentTrack];
-                if ((track->indexCount == -1) & (indexNum == 1)) {
+                if ((track->indexCount == -1) && (indexNum == 1)) {
                     parser->implicitIndex = 1;
                 } else if (track->indexCount != (indexNum - 1)) {
                     end_parse(parser, scheduler, "cuesheet INDEX not consecutive");
@@ -489,7 +489,7 @@ static void parse(struct CueParser* parser, struct CueFile* file, struct CueSche
                     if (parser->currentTrack == 1) {
                         track->indices[0] = 0;
                     } else {
-                        track->indices[0] = track->indices[1];
+                        track->indices[0] = track->indices[1]/*-150*/;
                         track->indices[1] += parser->currentPregap;
                         track->fileOffset += parser->currentPregap;
                         parser->currentSectorNumber += parser->currentPregap;

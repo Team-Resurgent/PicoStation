@@ -4,7 +4,6 @@
 #include <stdint.h>
 
 #include "pseudo_atomics.h"
-#include "utils.h"
 #include "values.h"
 
 namespace picostation {
@@ -13,34 +12,38 @@ class MechCommand;
 class DriveMechanics {
   public:
     void moveToNextSector();
-    int getSector() { return m_sector.Load(); }
-    uint32_t getTrack() const { return m_track; }
+    void setSector(uint32_t step, bool rev);
+    int getSector() { return m_sector; }
     void moveSled(MechCommand &mechCommand);
-    void moveTrack(int tracks) { setTrack(m_track + tracks); }
-    void setCountTrack(uint32_t countTrack) { m_countTrack = countTrack; }
-    void setSectorForTrackUpdate(int sectorForTrackUpdate) { m_sectorForTrackUpdate = sectorForTrackUpdate; }
-    void setSledMoveDirection(int sledMoveDirection);
-    void setTrack(uint32_t track) {
-        m_track = std::clamp(track, c_trackMin, c_trackMax);
-        m_sectorForTrackUpdate = trackToSector(m_track);
-        m_sector = m_sectorForTrackUpdate;
+    bool servo_valid();
+    void startSled();
+    void stopSled() { sled_work = false; }
+    uint32_t get_track_count() { return cur_track_counter;}
+	
+    void resetDrive()
+    {
+      sled_work = false;
+      m_sector = 0;
+      cur_track_counter = 0;
+      cur_zone = 0;
+      skip_subq = 0;
     }
 
-    bool isSledStopped() { return m_sledMoveDirection == SledMove::STOP; }
-
+    bool isSledStopped() { return !sled_work; }
+    
+    uint32_t req_skip_subq() { return skip_subq; }
+    void clear_skip_subq() { skip_subq = 0; }
+    
   private:
-    uint32_t m_countTrack = 0;
-    uint32_t m_originalTrack = 0;
-    uint32_t m_track = 0;
-
-    pseudoatomic<int> m_sector;
-
-    int m_sectorForTrackUpdate = 0;
-    int m_sectorsPerTrack = sectorsPerTrack(0);
-
-    int m_sledMoveDirection = SledMove::STOP;
+	  uint32_t cur_track_counter = 0;
     uint64_t m_sledTimer = 0;
+    uint32_t m_sector = 0;
+    uint8_t cur_zone = 0;
+    uint32_t c_MaxTrackMoveTime = 32;
+    bool sled_work = false;
+    uint32_t skip_subq = 0;
 };
 
 extern DriveMechanics g_driveMechanics;
 }  // namespace picostation
+

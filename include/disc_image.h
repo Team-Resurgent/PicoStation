@@ -17,27 +17,27 @@ class DiscImage {
 
     enum DataLocation {
         RAM,
-        SDCard,
-        USBSerial,
-        USBStorage,
+        SDCard
     };
 
-    void buildSector(const int sector, uint8_t *buffer, uint8_t *userData);
+    void buildSector(const int sector, uint32_t *buffer, uint16_t *userData, const uint16_t *scramling, bool pregap = false);
     FRESULT load(const TCHAR *targetCue);
+    void unload();
     SubQ::Data generateSubQ(const int sector);
     bool hasData() { return m_hasData; };
-    bool isCurrentTrackData() {
-        return m_cueDisc.tracks[m_currentLogicalTrack].trackType == CueTrackType::TRACK_TYPE_DATA;
-    };
     void makeDummyCue();
-    void readSector(void *buffer, const int sector, DataLocation location);
-    void readSectorRAM(void *buffer, const int sector);
-    void readSectorSD(void *buffer, const int sector);
+    void readSector(void *buffer, const int sector, DataLocation location, const uint16_t *scramling);
+    void readSectorRAM(void *buffer, const int sector, const uint16_t *scramling);
+    void readSectorSD(void *buffer, const int sector, const uint16_t *scramling);
+    void set_skip_bootsector(bool skip) { skip_bootsector =  skip; }
+	void set_skip_edc(bool skip) { skip_edc =  skip; }
 
   private:
     CueDisc m_cueDisc;
     bool m_hasData = false;
     int m_currentLogicalTrack = 0;
+    bool skip_bootsector = false;
+    bool skip_edc = false;
 };
 
 extern DiscImage g_discImage;

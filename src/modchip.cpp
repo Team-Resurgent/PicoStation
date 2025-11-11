@@ -69,11 +69,11 @@ void picostation::ModChip::sendLicenseString(const int sector, MechCommand &mech
 
             if (modchip_hysteresis > 100) {
                 modchip_hysteresis = 0;
-            //    DEBUG_PRINT("+SCEX\n");
+                DEBUG_PRINT("+SCEX\n");
 
                 // Send the 3 license strings, twice each
                 for (int i = 0; i < 6 && waitWithAbort(90000U); i++) {
-            //        DEBUG_PRINT("%s\n", s_licenseData[i % 3]);
+                    DEBUG_PRINT("%s\n", s_licenseData[i % 3]);
                     uart_puts(uart1, s_licenseData[i % 3]);
                     uart_tx_wait_blocking(uart1);
                 }

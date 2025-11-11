@@ -37,7 +37,7 @@ class SubQ {
 
     SubQ(DiscImage *discImage) : m_discImage(discImage) {}
     void start_subq(const int sector);
-    void stop_subq();
+    //void stop_subq();
 
   private:
     void printf_subq(const uint8_t *data);

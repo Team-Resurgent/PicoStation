@@ -1,4 +1,6 @@
 # == DO NOT EDIT THE FOLLOWING LINES for the Raspberry Pi Pico VS Code Extension to work ==
+set(PICO_SDK_PATH "${CMAKE_CURRENT_LIST_DIR}/third_party/pico-sdk/")
+
 if(WIN32)
     set(USERHOME $ENV{USERPROFILE})
 else()
@@ -39,7 +41,7 @@ project(${PROJECT_NAME})
 
 pico_sdk_init()
 
-set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_BUILD_TYPE Release)
 
 function(addBinaryFileWithSize target name sizeName path)
     set(asmFile "${PROJECT_BINARY_DIR}/includes/${target}_${name}.s")
@@ -96,22 +98,19 @@ addBinaryFileWithSize(${PROJECT_NAME} loaderImage loaderImageSize binary/picosta
 target_sources(
     ${PROJECT_NAME} PRIVATE
     src/cmd.cpp
-    src/debug.cpp
     src/disc_image.cpp
-    src/directory_listing.cpp
     src/drive_mechanics.cpp
-    src/hw_config.cpp
+    src/edc.c
     src/i2s.cpp
     src/main.cpp
     src/modchip.cpp
     src/picostation.cpp
     src/subq.cpp
-    src/utils.cpp
+    src/directory_listing.cpp
+    src/si5351.c
     third_party/cueparser/cueparser.c
     third_party/cueparser/fileabstract.c
     third_party/cueparser/scheduler.c
-    third_party/iec-60908b/edcecc.c
-    third_party/iec-60908b/tables.c
     third_party/posix_file.c
 )
 
@@ -122,10 +121,12 @@ target_include_directories(
     ${CMAKE_CURRENT_LIST_DIR}/third_party
 )
 
-add_subdirectory(third_party/no-OS-FatFS-SD-SDIO-SPI-RPi-Pico/src build)
+add_subdirectory(third_party/SD-fatfs build)
+
 add_subdirectory(third_party/RP2040_Pseudo_Atomic)
 
-pico_enable_stdio_usb(${PROJECT_NAME} 1)
+pico_enable_stdio_usb(${PROJECT_NAME} 0)
+pico_enable_stdio_uart(${PROJECT_NAME} 0)
 
 pico_generate_pio_header(${PROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR}/pio/main.pio)
 
@@ -136,14 +137,14 @@ target_link_libraries(
     hardware_pwm
     hardware_vreg
     hardware_i2c
-    no-OS-FatFS-SD-SDIO-SPI-RPi-Pico
+    SD-fatfs
     pico_bootrom
     pico_multicore
     pico_stdlib
 )
 
-target_include_directories(no-OS-FatFS-SD-SDIO-SPI-RPi-Pico BEFORE INTERFACE
-    ${CMAKE_CURRENT_LIST_DIR}/include
+target_include_directories(SD-fatfs BEFORE INTERFACE
+    ${CMAKE_CURRENT_LIST_DIR}/source
 )
 
 pico_add_extra_outputs(${PROJECT_NAME})

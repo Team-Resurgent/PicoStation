@@ -32,7 +32,7 @@ SOFTWARE.
 extern "C" {
 #endif
 
-struct CueFile* create_posix_file(struct CueFile*, const char* filename, const char* mode);
+struct CueFile* create_posix_file(struct CueFile*, const char* filename, uint8_t mode);
 
 #ifdef __cplusplus
 }

@@ -5,8 +5,10 @@
 
 #include "cmd.h"
 #include "disc_image.h"
+#include "directory_listing.h"
 #include "drive_mechanics.h"
 #include "hardware/pwm.h"
+#include <hardware/i2c.h>
 #include "i2s.h"
 #include "logging.h"
 #include "main.pio.h"
@@ -15,8 +17,7 @@
 #include "pseudo_atomics.h"
 #include "subq.h"
 #include "values.h"
-#include <string.h>
-#include <directory_listing.h>
+#include "si5351.h"
 
 #if DEBUG_MAIN
 #define DEBUG_PRINT(...) printf(__VA_ARGS__)
@@ -30,13 +31,8 @@
 // To-do: Fix seeks that go into the lead-in + track 1 pregap areas, possibly sending bad data over I2S
 
 // To-do: Make an ODE class and move these to members
-static picostation::I2S m_i2s;
-static picostation::MechCommand m_mechCommand;
-extern pseudoatomic<picostation::FileListingStates> needFileCheckAction;
-extern pseudoatomic<int> g_imageIndex;
-extern pseudoatomic<int> listReadyState;
-extern pseudoatomic<int> g_listOffset;
-extern pseudoatomic<int> g_entryOffset;
+picostation::I2S m_i2s;
+picostation::MechCommand m_mechCommand;
 
 bool picostation::g_subqDelay = false;  // core0: r/w
 
@@ -47,107 +43,154 @@ mutex_t picostation::g_mechaconMutex;
 pseudoatomic<bool> picostation::g_coreReady[2];
 
 unsigned int picostation::g_audioCtrlMode = audioControlModes::NORMAL;
-// pseudoatomic<int32_t> picostation::g_audioPeak;
-// pseudoatomic<int32_t> picostation::g_audioLevel = 0;
 
 pseudoatomic<picostation::FileListingStates> picostation::g_fileListingState;
 pseudoatomic<uint32_t> picostation::g_fileArg;
 
-enum class ResetType {
-    RESET_NONE = 0x0,
-    RESET_SHORT = 0x1,
-    RESET_LONG = 0x2,
-};
-
 static unsigned int s_mechachonOffset;
 unsigned int picostation::g_soctOffset;
 unsigned int picostation::g_subqOffset;
-static ResetType s_resetPending = ResetType::RESET_NONE;
-static bool s_doorPending = false;
 
-static picostation::PWMSettings pwmDataClock = {
-    .gpio = Pin::DA15, .wrap = (1 * 32) - 1, .clkdiv = 4, .invert = true, .level = (32 / 2)};
+static uint8_t s_resetPending = 0;
 
-static picostation::PWMSettings pwmLRClock = {
-    .gpio = Pin::LRCK, .wrap = (48 * 32) - 1, .clkdiv = 4, .invert = false, .level = (48 * (32 / 2))};
+static picostation::PWMSettings pwmDataClock = 
+{
+	.gpio = Pin::DA15,
+	.wrap = (1 * 32) - 1, 
+	.clkdiv = 4, 
+	.invert = true, 
+	.level = (32 / 2)
+};
 
-static picostation::PWMSettings pwmMainClock = {.gpio = Pin::CLK, .wrap = 1, .clkdiv = 2, .invert = false, .level = 1};
+static picostation::PWMSettings pwmLRClock = 
+{
+	.gpio = Pin::LRCK,
+	.wrap = (48 * 32) - 1,
+	.clkdiv = 4,
+	.invert = false,
+	.level = (48 * (32 / 2))
+};
+
+static picostation::PWMSettings pwmMainClock =
+{
+	.gpio = Pin::CLK,
+	.wrap = 1,
+	.clkdiv = 2,
+	.invert = false,
+	.level = 1
+};
 
 static void initPWM(picostation::PWMSettings *settings);
-static void interruptHandler(unsigned int gpio, uint32_t events);
-static void interruptHandler(unsigned int gpio, uint32_t events) {
-    static uint32_t lastLowEventReset = 0;
-    static uint32_t lastLowEventDoor = 0;
-    switch (gpio) {
-        case Pin::RESET: {
-            if (events & GPIO_IRQ_LEVEL_LOW) {
-                lastLowEventReset = time_us_32();
+
+static void __time_critical_func(interruptHandler)(unsigned int gpio, uint32_t events)
+{
+    static uint64_t lastLowEvent = 0;
+	static uint64_t lastLowEventDoor = 0;
+
+    switch (gpio)
+    {
+        case Pin::RESET:
+        {
+            if (events & GPIO_IRQ_LEVEL_LOW)
+            {
+                lastLowEvent = time_us_64();
                 // Disable low signal edge detection
                 gpio_set_irq_enabled(Pin::RESET, GPIO_IRQ_LEVEL_LOW, false);
                 // Enable high signal edge detection
                 gpio_set_irq_enabled(Pin::RESET, GPIO_IRQ_LEVEL_HIGH, true);
-            } else if (events & GPIO_IRQ_LEVEL_HIGH) {
+            } 
+            else if (events & GPIO_IRQ_LEVEL_HIGH)
+            {
                 // Disable the rising edge detection
                 gpio_set_irq_enabled(Pin::RESET, GPIO_IRQ_LEVEL_HIGH, false);
 
-                const uint32_t c_now = time_us_32();
-                const uint32_t c_timeElapsed = c_now - lastLowEventReset;
-                if (c_timeElapsed >= 500U)  // Debounce, only reset if the pin was low for more than 500us(.5 ms)
+                const uint64_t c_now = time_us_64();
+                const uint64_t c_timeElapsed = c_now - lastLowEvent;
+                
+                if (c_timeElapsed >= 50000U)  // Debounce, only reset if the pin was low for more than 50000us(50 ms)
                 {
-                    s_resetPending = c_timeElapsed > 2000000 ? ResetType::RESET_LONG : ResetType::RESET_SHORT;
-                } else {
-                    // Enable the low signal edge detection again
-                    gpio_set_irq_enabled(Pin::RESET, GPIO_IRQ_LEVEL_LOW, true);
+                    if (c_timeElapsed >= 1000000U) // pressed more one second
+					{
+						s_resetPending = 2;
+					}
+					else
+					{
+						s_resetPending = 1;
+					}
                 }
+                
+				// Enable the low signal edge detection again
+				gpio_set_irq_enabled(Pin::RESET, GPIO_IRQ_LEVEL_LOW, true);
             }
         } break;
-        case Pin::DOOR: {
-            if (events & GPIO_IRQ_LEVEL_HIGH) {
-                lastLowEventDoor = time_us_32();
+        
+        case Pin::DOOR:
+        {
+            if (events & GPIO_IRQ_LEVEL_HIGH)
+            {
+                lastLowEventDoor = time_us_64();
                 // Disable low signal edge detection
                 gpio_set_irq_enabled(Pin::DOOR, GPIO_IRQ_LEVEL_HIGH, false);
                 // Enable high signal edge detection
                 gpio_set_irq_enabled(Pin::DOOR, GPIO_IRQ_LEVEL_LOW, true);
-            } else if (events & GPIO_IRQ_LEVEL_LOW) {
+            }
+            else if (events & GPIO_IRQ_LEVEL_LOW)
+            {
                 // Disable the rising edge detection
                 gpio_set_irq_enabled(Pin::DOOR, GPIO_IRQ_LEVEL_LOW, false);
 
-                const uint32_t c_now = time_us_32();
-                const uint32_t c_timeElapsed = c_now - lastLowEventDoor;
-                if (c_timeElapsed >= 500U)  // Debounce, only reset if the pin was low for more than 500us(.5 ms)
+                const uint64_t c_now = time_us_64();
+                const uint64_t c_timeElapsed = c_now - lastLowEventDoor;
+                if (c_timeElapsed >= 50000U)  // Debounce, only reset if the pin was low for more than 50000us(50 ms)
                 {
-                    s_doorPending = true;
-                } else {
-                    // Enable the low signal edge detection again
-                    gpio_set_irq_enabled(Pin::DOOR, GPIO_IRQ_LEVEL_HIGH, true);
+                    m_i2s.s_doorPending = true;
                 }
+                
+                // Enable the low signal edge detection again
+                gpio_set_irq_enabled(Pin::DOOR, GPIO_IRQ_LEVEL_HIGH, true);
             }
         } break;
-        case Pin::XLAT: {
+
+        case Pin::XLAT:
+        {
             m_mechCommand.processLatchedCommand();
         } break;
     }
 }
 
-[[noreturn]] void __time_critical_func(picostation::core0Entry)() {
-    SubQ subq(&g_discImage);
-    uint64_t subqDelayTime = 0;
+static void __time_critical_func(mech_irq_hnd)()
+{
+	// Update latching
+	m_mechCommand.updateMech();
+	pio_interrupt_clear(PIOInstance::MECHACON, 0);
+}
 
+static void __time_critical_func(send_subq)(const int Sector)
+{
+	picostation::SubQ subq(&picostation::g_discImage);
+	
+	subq.start_subq(Sector);
+	picostation::g_subqDelay = false;
+}
+
+[[noreturn]] void __time_critical_func(picostation::core0Entry)()
+{
     g_coreReady[0] = true;
-    while (!g_coreReady[1].Load()) {
+    while (!g_coreReady[1].Load())
+    {
         tight_loop_contents();
     }
 
-    while (true) {
-        if (s_resetPending != ResetType::RESET_NONE) {
-            while (gpio_get(Pin::RESET) == 0) {
+    while (true)
+    {
+        if (s_resetPending)
+        {
+            while (gpio_get(Pin::RESET) == 0)
+            {
                 tight_loop_contents();
             }
-            reset();
-        }
-
-        // Update latching, output SENS
-        m_mechCommand.updateMechSens();
+			reset();
+		}
 
         const int currentSector = g_driveMechanics.getSector();
 
@@ -157,81 +200,63 @@ static void interruptHandler(unsigned int gpio, uint32_t events) {
         updatePlaybackSpeed();
 
         // Soct/Sled/seek
-        if (m_mechCommand.getSoct()) {
-            if (pio_sm_get_rx_fifo_level(PIOInstance::SOCT, SM::SOCT)) {
+        if (m_mechCommand.getSoct())
+        {
+            if (pio_sm_get_rx_fifo_level(PIOInstance::SOCT, SM::SOCT))
+            {
                 pio_sm_drain_tx_fifo(PIOInstance::SOCT, SM::SOCT);
                 m_mechCommand.setSoct(false);
                 pio_sm_set_enabled(PIOInstance::SOCT, SM::SOCT, false);
             }
-        } else if (!g_driveMechanics.isSledStopped()) {
+        }
+        else if (!g_driveMechanics.isSledStopped())
+        {
             g_driveMechanics.moveSled(m_mechCommand);
-        } else if (m_mechCommand.getSens(SENS::GFS)) {
-            if (g_subqDelay) {
-                if ((time_us_64() - subqDelayTime) > c_MaxSubqDelayTime) {
-                    g_subqDelay = false;
-                    subq.start_subq(currentSector);
-
-                    gpio_put(Pin::SCOR, 1);
-                    add_alarm_in_us(
-                        135,
-                        [](alarm_id_t id, void *user_data) -> int64_t {
-                            gpio_put(Pin::SCOR, 0);
-                            return 0;
-                        },
-                        NULL, true);
-                }
-            } else if (m_i2s.getSectorSending() == currentSector) {
+        }
+        else if (m_mechCommand.getSens(SENS::GFS))
+        {
+            if (m_i2s.getSectorSending() == currentSector)
+            {
                 g_driveMechanics.moveToNextSector();
                 g_subqDelay = true;
-                subqDelayTime = m_i2s.getLastSectorTime();
+
+                add_alarm_in_us(6667,
+					[](alarm_id_t id, void *user_data) -> int64_t {
+						send_subq((const int) user_data);
+						return 0;
+					}, (void *) currentSector, true);
             }
         }
-
-        if (s_doorPending == true) 
-        {
-            if (s_dataLocation != picostation::DiscImage::DataLocation::RAM)
-            {
-                printf("image index was: %i ", g_imageIndex.Load());
-                g_imageIndex = g_imageIndex.Load() + 1;
-                printf("now it is: %i\n", g_imageIndex.Load());
-                needFileCheckAction = picostation::FileListingStates::MOUNT_FILE;
-            }
-            s_doorPending = false;
-        }
-
-        if(needFileCheckAction.Load() == picostation::FileListingStates::PROCESS_FILES && listReadyState.Load() == 0)
-        {
-            picostation::DirectoryListing::getDirectoryEntries(g_entryOffset.Load());
-            listReadyState = 1;
-        }
-
-
     }
 }
 
-[[noreturn]] void picostation::core1Entry() {
+[[noreturn]] void picostation::core1Entry()
+{
     m_i2s.start(m_mechCommand);
     while (1) asm("");
     __builtin_unreachable();
 }
 
-void picostation::initHW() {
+void __time_critical_func(picostation::initHW)()
+{
 #if DEBUG_LOGGING_ENABLED
-    stdio_init_all();
+	stdio_init_all();
     stdio_set_chars_available_callback(NULL, NULL);
     sleep_ms(1250);
-
-     sleep_ms(5000);
-
 #endif
+
     DEBUG_PRINT("Initializing...\n");
 
     mutex_init(&g_mechaconMutex);
 
-    for (const unsigned int pin : Pin::allPins) {
+    for (const unsigned int pin : Pin::allPins)
+    {
         gpio_init(pin);
     }
-
+    
+    gpio_put(Pin::SD_CS, 1);
+    gpio_set_dir(Pin::SD_CS, GPIO_OUT);
+    
     gpio_set_dir(Pin::XLAT, GPIO_IN);
     gpio_set_dir(Pin::SQCK, GPIO_IN);
     gpio_set_dir(Pin::LMTSW, GPIO_OUT);
@@ -252,14 +277,27 @@ void picostation::initHW() {
     gpio_set_input_hysteresis_enabled(Pin::XLAT, true);
     gpio_set_input_hysteresis_enabled(Pin::SQCK, true);
     gpio_set_input_hysteresis_enabled(Pin::RESET, true);
-    gpio_set_input_hysteresis_enabled(Pin::DOOR, true);
     gpio_set_input_hysteresis_enabled(Pin::CMD_CK, true);
+    
+    i2c_init(i2c0, 400*1000);
+	gpio_set_function(Pin::EXP_I2C0_SDA, GPIO_FUNC_I2C);
+	gpio_set_function(Pin::EXP_I2C0_SCL, GPIO_FUNC_I2C);
+	gpio_pull_up(Pin::EXP_I2C0_SDA);
+	gpio_pull_up(Pin::EXP_I2C0_SCL);
+	
+	// Initialize the Si5351
+	if (si5351_Init(0))
+	{
+		si5351_SetupCLK1(53203425, SI5351_DRIVE_STRENGTH_8MA);
+		si5351_SetupCLK2(53693175, SI5351_DRIVE_STRENGTH_8MA);
+		si5351_EnableOutputs((1<<1) | (1<<2));
+	}
 
     initPWM(&pwmMainClock);
     initPWM(&pwmDataClock);
     initPWM(&pwmLRClock);
 
-    unsigned int i2s_pio_offset = pio_add_program(PIOInstance::I2S_DATA, &i2s_data_program);
+    uint32_t i2s_pio_offset = pio_add_program(PIOInstance::I2S_DATA, &i2s_data_program);
     i2s_data_program_init(PIOInstance::I2S_DATA, SM::I2S_DATA, i2s_pio_offset, Pin::DA15, Pin::DA16);
 
     s_mechachonOffset = pio_add_program(PIOInstance::MECHACON, &mechacon_program);
@@ -277,14 +315,18 @@ void picostation::initHW() {
     sleep_ms(300);
     gpio_set_dir(Pin::RESET, GPIO_IN);
 
-    while ((time_us_64() - startTime) < 30000) {
-        if (gpio_get(Pin::RESET) == 0) {
+    while ((time_us_64() - startTime) < 30000)
+    {
+        if (gpio_get(Pin::RESET) == 0)
+        {
             startTime = time_us_64();
         }
     }
 
-    while ((time_us_64() - startTime) < 30000) {
-        if (gpio_get(Pin::CMD_CK) == 0) {
+    while ((time_us_64() - startTime) < 30000)
+    {
+        if (gpio_get(Pin::CMD_CK) == 0)
+        {
             startTime = time_us_64();
         }
     }
@@ -294,6 +336,13 @@ void picostation::initHW() {
     gpio_set_irq_enabled_with_callback(Pin::XLAT, GPIO_IRQ_EDGE_FALL, true, &interruptHandler);
 
     pio_sm_set_enabled(PIOInstance::MECHACON, SM::MECHACON, true);
+    
+    pio_set_irq0_source_enabled(PIOInstance::MECHACON, (enum pio_interrupt_source)pis_interrupt0, true);
+    
+    
+    pio_interrupt_clear(PIOInstance::MECHACON, 0);
+    irq_set_exclusive_handler(PIO0_IRQ_0, mech_irq_hnd);
+    irq_set_enabled(PIO0_IRQ_0, true);
 
     g_coreReady[0] = false;
     g_coreReady[1] = false;
@@ -301,7 +350,8 @@ void picostation::initHW() {
     DEBUG_PRINT("ON!\n");
 }
 
-static void initPWM(picostation::PWMSettings *settings) {
+static void __time_critical_func(initPWM)(picostation::PWMSettings *settings)
+{
     gpio_set_function(settings->gpio, GPIO_FUNC_PWM);
     settings->sliceNum = pwm_gpio_to_slice_num(settings->gpio);
     settings->config = pwm_get_default_config();
@@ -313,11 +363,13 @@ static void initPWM(picostation::PWMSettings *settings) {
     pwm_set_both_levels(settings->sliceNum, settings->level, settings->level);
 }
 
-void picostation::updatePlaybackSpeed() {
+void __time_critical_func(picostation::updatePlaybackSpeed)()
+{
     static constexpr unsigned int c_clockDivNormal = 4;
     static constexpr unsigned int c_clockDivDouble = 2;
 
-    if (s_currentPlaybackSpeed != g_targetPlaybackSpeed) {
+    if (s_currentPlaybackSpeed != g_targetPlaybackSpeed)
+    {
         s_currentPlaybackSpeed = g_targetPlaybackSpeed;
         const unsigned int clock_div = (s_currentPlaybackSpeed == 1) ? c_clockDivNormal : c_clockDivDouble;
         pwm_set_mask_enabled(0);
@@ -330,8 +382,10 @@ void picostation::updatePlaybackSpeed() {
     }
 }
 
-void picostation::reset() {
+void __time_critical_func(picostation::reset)()
+{
     DEBUG_PRINT("RESET!\n");
+    m_i2s.i2s_set_state(0);
     pio_sm_set_enabled(PIOInstance::SUBQ, SM::SUBQ, false);
     pio_sm_set_enabled(PIOInstance::SOCT, SM::SOCT, false);
     pio_sm_restart(PIOInstance::MECHACON, SM::MECHACON);
@@ -342,6 +396,21 @@ void picostation::reset() {
 
     g_targetPlaybackSpeed = 1;
     updatePlaybackSpeed();
+    
+    if (s_resetPending == 2)
+    {
+        if (s_dataLocation != picostation::DiscImage::DataLocation::RAM)
+		{
+			g_discImage.unload();
+			g_discImage.makeDummyCue();
+			m_i2s.menu_active = true;
+			g_discImage.set_skip_bootsector(false);
+			g_discImage.set_skip_edc(false);
+            m_mechCommand.setFirstClvModeStopKickPattern(true);
+		}
+		picostation::DirectoryListing::gotoRoot();
+		s_dataLocation = picostation::DiscImage::DataLocation::RAM;
+    }
 
     mechacon_program_init(PIOInstance::MECHACON, SM::MECHACON, s_mechachonOffset, Pin::CMD_DATA);
     g_subqDelay = false;
@@ -349,29 +418,31 @@ void picostation::reset() {
 
     gpio_put(Pin::SCOR, 0);
     gpio_put(Pin::SQSO, 0);
-
-    uint64_t debounceTime = time_us_64();
-
-    while ((time_us_64() - debounceTime) < 30000) {
-        if (gpio_get(Pin::RESET) == 0) {
-            debounceTime = time_us_64();
-        }
-    }
-
-    while ((time_us_64() - debounceTime) < 30000) {
-        if (gpio_get(Pin::CMD_CK) == 0) {
-            debounceTime = time_us_64();
-        }
-    }
-
-    if (s_resetPending == ResetType::RESET_LONG)
-    {
-        s_dataLocation = picostation::DiscImage::DataLocation::RAM;
-        picostation::DirectoryListing::gotoRoot();
-    }
-
+	g_driveMechanics.resetDrive();
+	m_i2s.reinitI2S();
+    m_mechCommand.setFirstClvModeStopKickPattern(true);
+	
+	uint64_t startTime = time_us_64();
+	
+	while ((time_us_64() - startTime) < 30000)
+	{
+		if (gpio_get(Pin::RESET) == 0)
+		{
+			startTime = time_us_64();
+		}
+	}
+	
+	while ((time_us_64() - startTime) < 30000)
+	{
+		if (gpio_get(Pin::CMD_CK) == 0)
+		{
+			startTime = time_us_64();
+		}
+	}
+	
     pio_sm_set_enabled(PIOInstance::MECHACON, SM::MECHACON, true);
-    s_resetPending = ResetType::RESET_NONE;
-    gpio_set_irq_enabled(Pin::RESET, GPIO_IRQ_LEVEL_LOW, true);
-    gpio_set_irq_enabled(Pin::DOOR, GPIO_IRQ_LEVEL_HIGH, true);
+    
+	s_resetPending = 0;
+	gpio_set_irq_enabled(Pin::RESET, GPIO_IRQ_LEVEL_LOW, true);
 }
+

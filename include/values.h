@@ -39,7 +39,7 @@ enum : unsigned int {
     EXP_BUTTON1 = GPIO_EXP_BUTTON1,
     EXP_BUTTON2 = GPIO_EXP_BUTTON2
 };
-constexpr unsigned int allPins[] = {XLAT, SQCK, LMTSW, SCEX_DATA, DOOR, RESET,    SENS,  DA15,
+constexpr unsigned int allPins[] = {SD_CS, XLAT, SQCK, LMTSW, SCEX_DATA, DOOR, RESET, SENS, DA15,
                                     DA16, LRCK, SCOR,  SQSO,      CLK,  CMD_DATA, CMD_CK};
 };  // namespace Pin
 // C2PO, WFCK is always GND
@@ -58,10 +58,6 @@ enum : unsigned int {
 };
 }
 
-namespace SledMove {
-enum : int { REVERSE = -1, STOP = 0, FORWARD = 1 };
-}
-
 namespace PIOInstance {
 PIO const I2S_DATA = pio0;
 PIO const MECHACON = pio0;
@@ -71,24 +67,20 @@ PIO const SUBQ = pio0;
 
 namespace SM {
 // PIO0
-constexpr unsigned int I2S_DATA = 0;
-constexpr unsigned int MECHACON = 1;
-constexpr unsigned int SOCT = 2;
-constexpr unsigned int SUBQ = 3;
+constexpr uint32_t I2S_DATA = 0;
+constexpr uint32_t MECHACON = 1;
+constexpr uint32_t SOCT = 2;
+constexpr uint32_t SUBQ = 3;
 }  // namespace SM
 
-constexpr int NUM_IMAGES = 3;
 constexpr int c_leadIn = 4500;
 constexpr int c_preGap = 150;
-constexpr int c_licenseSectors = 16; // License sectors in the loader image
 
-constexpr uint32_t c_trackMin = 0;
-constexpr uint32_t c_trackMax = 20892;  // 73:59:58
 constexpr int c_sectorMin = 0;
-constexpr int c_sectorMax = 333000;  // 74:00:00
+extern int c_sectorMax;
 
-constexpr unsigned int c_MaxTrackMoveTime = 15;    // uS
-constexpr unsigned int c_MaxSubqDelayTime = 3333;  // uS
+//uint32_t c_MaxTrackMoveTime = 15;//35714;//139;
+constexpr uint32_t c_MaxSubqDelayTime = 3333;  // uS
 
 
 constexpr size_t c_cdSamplesSize = 588;

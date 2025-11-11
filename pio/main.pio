@@ -8,6 +8,7 @@ loop:
     in pins 1
     jmp x-- loop
     push noblock
+    irq 0
 .wrap
 % c-sdk {
 
@@ -72,9 +73,7 @@ loop_dword:
     jmp x-- loop_dword
     jmp y-- loop
     
-    push block
-    
-    set pins 1
+    set pins 0
 hang:
     jmp hang
 
